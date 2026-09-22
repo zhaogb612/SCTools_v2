@@ -1,0 +1,24 @@
+# 构建产物
+build/
+dist/
+dist_installer/
+installer/build/
+installer/dist/
+
+# 大体积第三方工具与运行时释放资源（发布时由安装包/Release 提供）
+tools/
+resources/icons/
+resources/skins/
+
+# 载荷 zip（构建脚本生成）
+installer/assets/payload.zip
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 临时
+_*.txt
+_*.py
+*.log
