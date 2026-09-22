@@ -34,7 +34,7 @@ _shell32.ExtractIconExW.argtypes = [ctypes.c_wchar_p, ctypes.c_int,
 
 
 def _generic_image():
-    global _generic_img
+    global _provider, _generic_img
     if _generic_img is None:
         if _provider is None:
             _provider = QFileIconProvider()
