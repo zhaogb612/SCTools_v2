@@ -4,7 +4,6 @@
     "磁盘工具",
     "硬件检测",
     "系统优化",
-    "游戏工具",
     "其他工具",
     "网络工具"
   ],
@@ -14,7 +13,8 @@
       "category": "系统工具",
       "description": "Windows 11设置工具",
       "path": "tools\\system_tools\\Windows11轻松设置_1.09_Portable\\Windows11轻松设置.exe",
-      "order": 34
+      "order": 34,
+      "favorite": false
     },
     {
       "name": "WinNTSetup",
@@ -39,7 +39,7 @@
     },
     {
       "name": "ResHacker",
-      "category": "系统工具",
+      "category": "其他工具",
       "description": "资源工具",
       "path": "tools\\system_tools\\ResHacker\\ResHacker4.exe",
       "order": 1,
@@ -180,14 +180,14 @@
     },
     {
       "name": "Windows超级管理器",
-      "category": "系统工具",
+      "category": "其他工具",
       "description": "Windows系统设置和监管工具",
       "path": "tools\\other_tools\\Windowscjglq.exe",
       "order": 29
     },
     {
       "name": "Everything",
-      "category": "系统工具",
+      "category": "其他工具",
       "description": "文件快速搜索工具",
       "path": "tools\\other_tools\\Everything\\EverythingPortable.exe",
       "order": 33
@@ -236,7 +236,7 @@
     },
     {
       "name": "FastCopy",
-      "category": "系统优化",
+      "category": "其他工具",
       "description": "高速文件拷贝工具",
       "path": "tools\\system_optimization\\FastCopy  5.12.0.exe",
       "order": 41
@@ -292,21 +292,21 @@
     },
     {
       "name": "DirectX Repair",
-      "category": "系统工具",
+      "category": "其他工具",
       "description": "DirectX 修复工具（C++ 运行库一键修复）",
-      "path": "tools\\system_tools\\DirectX_Repair\\DirectX_Repair.exe",
+      "path": "tools\\system_tools\\DirectX_Repair\\DirectX Repair.exe",
       "order": 49
     },
     {
       "name": "Rufus",
       "category": "系统工具",
       "description": "U 盘启动盘制作工具",
-      "path": "tools\\system_tools\\Rufus\\Rufus.exe",
+      "path": "tools\\system_tools\\Rufus\\rufus.exe",
       "order": 50
     },
     {
       "name": "Ventoy2Disk",
-      "category": "系统工具",
+      "category": "其他工具",
       "description": "U 盘多系统启动盘工具",
       "path": "tools\\system_tools\\Ventoy\\Ventoy2Disk.exe",
       "order": 51
@@ -322,12 +322,12 @@
       "name": "procexp(32位)",
       "category": "系统工具",
       "description": "Process Explorer 进程管理器（32 位）",
-      "path": "tools\\system_tools\\ProcessExplorer\\procexp32.exe",
+      "path": "tools\\system_tools\\ProcessExplorer\\procexp.exe",
       "order": 53
     },
     {
       "name": "FanControl",
-      "category": "硬件检测",
+      "category": "其他工具",
       "description": "风扇转速智能控制",
       "path": "tools\\hardware_detection\\FanControl\\FanControl.exe",
       "order": 54
@@ -340,60 +340,11 @@
       "order": 55
     },
     {
-      "name": "Steam 官方下载",
-      "category": "游戏工具",
-      "description": "Steam 平台下载（网址卡片）",
-      "path": "https://store.steampowered.com/about/",
-      "order": 56
-    },
-    {
-      "name": "Epic 官方下载",
-      "category": "游戏工具",
-      "description": "Epic 平台下载（网址卡片）",
-      "path": "https://store.epicgames.com/zh-CN/",
-      "order": 57
-    },
-    {
-      "name": "EA App 官方下载",
-      "category": "游戏工具",
-      "description": "EA App 平台下载（网址卡片）",
-      "path": "https://www.ea.com/ea-app",
-      "order": 58
-    },
-    {
-      "name": "战网游戏平台",
-      "category": "游戏工具",
-      "description": "暴雪战网下载（网址卡片）",
-      "path": "https://download.battle.net/",
-      "order": 59
-    },
-    {
-      "name": "微星小飞机",
-      "category": "游戏工具",
-      "description": "MSI Afterburner 显卡监控/超频（下载页）",
-      "path": "https://www.msi.com/Landing/afterburner",
-      "order": 60
-    },
-    {
-      "name": "风灵月影",
-      "category": "游戏工具",
-      "description": "FlingTrainer 修改器官网（网址卡片）",
-      "path": "https://flingtrainer.com/",
-      "order": 61
-    },
-    {
-      "name": "迅游加速器",
-      "category": "游戏工具",
-      "description": "迅游加速器官网（网址卡片）",
-      "path": "https://www.xunyou.com/",
-      "order": 62
-    },
-    {
-      "name": "雷神加速器",
-      "category": "游戏工具",
-      "description": "雷神加速器官网（网址卡片）",
-      "path": "https://www.leigod.com/",
-      "order": 63
+      "name": "定时关机",
+      "category": "其他工具",
+      "description": "定时关机工具",
+      "path": "tools\\other_tools\\定时关机.exe",
+      "order": 64
     }
   ]
 }

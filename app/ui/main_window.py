@@ -23,8 +23,9 @@ from app.ui.title_bar import TitleBar
 from app.ui.tools_page import ToolsPage
 
 CATEGORY_ICON = {"系统工具": "system", "磁盘工具": "disk", "硬件检测": "chip",
-                 "系统优化": "spark", "其他工具": "layers", "网络工具": "globe",
-                 "游戏工具": "game"}
+                 "系统优化": "spark", "其他工具": "layers", "网络工具": "globe"}
+
+FAV_VIEW_NAME = "我的收藏"
 
 NAV_PAGE_NAME = "网站导航"
 SET_PAGE_NAME = "设置与皮肤"
@@ -135,7 +136,9 @@ class MainWindow(QMainWindow):
         """内置功能入口（builtin://name），目前：屏幕坏点/漏光测试"""
         if name == "screen_test":
             from app.ui.screen_test import ScreenTestDialog
-            ScreenTestDialog(self).exec()
+            dlg = ScreenTestDialog(self)
+            dlg.setWindowFlag(Qt.Window)
+            dlg.show()
 
     def closeEvent(self, event):
         # 停掉后台线程，避免退出时 QThread 仍在运行
@@ -200,6 +203,8 @@ class MainWindow(QMainWindow):
             hint = "主题、背景与日/夜模式设置"
         elif name == CHECK_PAGE_NAME:
             hint = "检测本机硬件与系统配置，附带配置文件扫描"
+        elif name == FAV_VIEW_NAME:
+            hint = "我的收藏：收藏的应用集中显示，右键卡片可取消收藏"
         else:
             n = len(self.app_manager.by_category(name))
             hint = "{}：包含 {} 个应用".format(name, n)
@@ -209,7 +214,7 @@ class MainWindow(QMainWindow):
     def _fill_sidebar(self):
         self.nav_list.blockSignals(True)
         self.nav_list.clear()
-        entries = [(CHECK_PAGE_NAME, "info")] + \
+        entries = [(CHECK_PAGE_NAME, "info"), (FAV_VIEW_NAME, "star")] + \
                   [(c, CATEGORY_ICON.get(c, "all")) for c in self.app_manager.categories] + \
                   [(NAV_PAGE_NAME, "globe"), (SET_PAGE_NAME, "settings")]
         for name, icon_name in entries:
@@ -273,6 +278,8 @@ class MainWindow(QMainWindow):
                 ic = "settings"
             elif name == CHECK_PAGE_NAME:
                 ic = "info"
+            elif name == FAV_VIEW_NAME:
+                ic = "star"
             elif name == "全部应用":
                 ic = "all"
             else:

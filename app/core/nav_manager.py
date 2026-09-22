@@ -2,7 +2,23 @@
 """网站导航管理：JSON 持久化，支持用户自定义增删改；链接已于 2026-09 逐一校验"""
 from app.core import config
 
-DEFAULT_GROUPS = ["社交媒体", "官方下载", "搜索引擎", "知识社区", "美化资源", "科技资讯", "常用网站", "常用软件"]
+DEFAULT_GROUPS = ["社交媒体", "官方下载", "搜索引擎", "知识社区", "美化资源", "科技资讯",
+                  "常用网站", "常用软件", "游戏工具"]
+
+# 游戏工具分组（自旧「游戏工具」应用分类迁移）
+GAME_NAV = [
+    {"name": "Steam 官方下载", "url": "https://store.steampowered.com/about/", "description": "Steam 平台下载", "group": "游戏工具"},
+    {"name": "Epic 官方下载", "url": "https://store.epicgames.com/zh-CN/", "description": "Epic 平台下载", "group": "游戏工具"},
+    {"name": "EA App 官方下载", "url": "https://www.ea.com/ea-app", "description": "EA App 平台下载", "group": "游戏工具"},
+    {"name": "战网游戏平台", "url": "https://download.battle.net/", "description": "暴雪战网下载", "group": "游戏工具"},
+    {"name": "微星小飞机", "url": "https://www.msi.com/Landing/afterburner", "description": "MSI Afterburner 显卡监控/超频（下载页）", "group": "游戏工具"},
+    {"name": "风灵月影", "url": "https://flingtrainer.com/", "description": "FlingTrainer 修改器官网", "group": "游戏工具"},
+    {"name": "迅游加速器", "url": "https://www.xunyou.com/", "description": "迅游加速器官网", "group": "游戏工具"},
+    {"name": "雷神加速器", "url": "https://www.leigod.com/", "description": "雷神加速器官网", "group": "游戏工具"},
+    {"name": "UU加速器", "url": "https://uu.163.com/", "description": "网易 UU 加速器官网", "group": "游戏工具"},
+    {"name": "YZ加速器", "url": "https://www.yuanzijiasu.com/", "description": "YZ 加速器官网", "group": "游戏工具"},
+    {"name": "外星仔加速器", "url": "https://www.et001.com/", "description": "外星仔加速器官网", "group": "游戏工具"},
+]
 
 DEFAULT_NAV = [
     {"name": "微信网页版", "url": "https://wx.qq.com/", "description": "微信网页版（注意：部分账号已不支持网页版登录）", "group": "社交媒体"},
@@ -67,6 +83,8 @@ DEFAULT_NAV = [
     {"name": "Uotan Toolbox", "url": "https://toolbox.uotan.cn/", "description": "刷机工具箱", "group": "常用软件"},
     {"name": "网易有道翻译", "url": "https://fanyi.youdao.com/", "description": "在线翻译工具", "group": "常用软件"},
 ]
+
+DEFAULT_NAV.extend(GAME_NAV)  # 并入游戏工具分组，缺失项启动时自动补进配置
 
 
 class NavManager:

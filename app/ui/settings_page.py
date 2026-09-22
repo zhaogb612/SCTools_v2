@@ -353,31 +353,40 @@ class _DownloadThread(updater.FnThread):
             self.fail.emit(str(e))
 
 
-class HotkeyCaptureDialog(AppDialog):
-    """按键捕获：按下「修饰键+主键」完成录制，Esc 取消"""
-    def __init__(self, parent):
-        super().__init__(parent, "自定义全局热键")
-        self.result_combo = None   # 录制成功的组合键文本
-        lay = self.content_layout()
-        self.lbl = QLabel("请直接按下新的快捷键组合\n（需包含 Ctrl / Alt / Shift / Win 至少一个修饰键）")
-        self.lbl.setAlignment(Qt.AlignCenter)
-        self.lbl.setFixedHeight(96)
-        self.lbl.setObjectName("Sub")
-        lay.addWidget(self.lbl)
+class HotkeyLabel(QLabel):
+    """行内热键录制：点击后直接在原位按键完成录制，Esc 取消，无需弹窗"""
+    captured = Signal(str)
+
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        self._idle = text
+        self._capturing = False
+        self.setObjectName("Sub")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("点击后按下新的快捷键组合（需含 Ctrl/Alt/Shift/Win）")
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setFixedWidth(360)
+
+    def mousePressEvent(self, e):
+        self._capturing = True
+        self.setText("请按下组合键…")
+        self.setFocus()
+        super().mousePressEvent(e)
 
     def keyPressEvent(self, e):
+        if not self._capturing:
+            super().keyPressEvent(e)
+            return
         key = e.key()
+        m = e.modifiers()
         if key in (Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt, Qt.Key_Meta,
                    Qt.Key_AltGr, Qt.Key_unknown):
-            self.lbl.setText("已按住修饰键，请继续按主键\n（字母 / 数字 / F1-F12 / 空格）")
+            self.setText("已按住修饰键，继续按主键…")
             return
-        if key == Qt.Key_Escape:
-            self.reject()
+        if key == Qt.Key_Escape:  # 取消
+            self._capturing = False
+            self.setText(self._idle)
             return
         names = []
-        m = e.modifiers()
         if m & Qt.ControlModifier:
             names.append("Ctrl")
         if m & Qt.AltModifier:
@@ -386,15 +395,25 @@ class HotkeyCaptureDialog(AppDialog):
             names.append("Shift")
         if m & Qt.MetaModifier:
             names.append("Win")
-        if not names:
-            self.lbl.setText("必须包含 Ctrl / Alt / Shift / Win 至少一个修饰键")
+        main = QKeySequence(key).toString()
+        if not names or not main:
+            self.setText("需包含 Ctrl/Alt/Shift/Win + 主键")
             return
-        label = "+".join(names + [QKeySequence(key).toString()])
-        if parse_hotkey(label) is None:
-            self.lbl.setText("不支持该主键，请使用字母 / 数字 / F1-F12 / 空格")
+        combo = "+".join(names + [main])
+        if parse_hotkey(combo) is None:
+            self.setText("不支持该主键，请用字母 / 数字 / F1-F12 / 空格")
             return
-        self.result_combo = label
-        self.accept()
+        self._capturing = False
+        self._idle = combo
+        self.setText(combo)
+        self.captured.emit(combo)
+
+    def focusOutEvent(self, e):
+        # 点别处即取消录制
+        if self._capturing:
+            self._capturing = False
+            self.setText(self._idle)
+        super().focusOutEvent(e)
 
 
 class ThemeDialog(AppDialog):
@@ -675,21 +694,16 @@ class SettingsPage(QWidget):
         opt_row.addWidget(self.btn_icon_off)
         opt_row.addStretch()
         v1.addLayout(opt_row)
-        # 全局热键开关 + 自定义
+        # 全局热键开关 + 行内自定义（点击热键文字直接按键录制，无弹窗）
         hk_row = QHBoxLayout()
         hk_row.setSpacing(8)
         l_hk = QLabel("全局热键")
         l_hk.setObjectName("GroupTitle")
         hk_row.addWidget(l_hk)
-        self.lbl_hotkey = QLabel(self._win.skin.get("hotkey_label", "Ctrl+Alt+S"))
-        self.lbl_hotkey.setObjectName("Sub")
+        self.lbl_hotkey = HotkeyLabel(self._win.skin.get("hotkey_label", "Ctrl+Alt+S"))
+        self.lbl_hotkey.captured.connect(self._on_hotkey_captured)
         hk_row.addWidget(self.lbl_hotkey)
         hk_row.addStretch()
-        btn_hk_custom = QPushButton("自定义")
-        btn_hk_custom.setObjectName("Ghost")
-        btn_hk_custom.setCursor(Qt.PointingHandCursor)
-        btn_hk_custom.clicked.connect(self._customize_hotkey)
-        hk_row.addWidget(btn_hk_custom)
         self.btn_hk_on = QPushButton("开启")
         self.btn_hk_off = QPushButton("关闭")
         for b in (self.btn_hk_on, self.btn_hk_off):
@@ -802,6 +816,11 @@ class SettingsPage(QWidget):
         btn_import.clicked.connect(self._import_config)
         cfg_row.addWidget(btn_export)
         cfg_row.addWidget(btn_import)
+        self.btn_reset = QPushButton("恢复默认")
+        self.btn_reset.setObjectName("Ghost")
+        self.btn_reset.setCursor(Qt.PointingHandCursor)
+        self.btn_reset.clicked.connect(self._reset_config)
+        cfg_row.addWidget(self.btn_reset)
         v4.addLayout(cfg_row)
         root.addWidget(sec4)
 
@@ -920,17 +939,12 @@ class SettingsPage(QWidget):
         self._win.skin["global_hotkey"] = bool(on)
         self._win.apply_hotkey()
 
-    def _customize_hotkey(self):
-        dlg = HotkeyCaptureDialog(self)
-        if dlg.exec() and dlg.result_combo:
-            self._win.skin["hotkey_label"] = dlg.result_combo
-            self.lbl_hotkey.setText(dlg.result_combo)
-            self._win.apply_hotkey()
-            if not self._win.skin.get("hotkey_ok", False):
-                AppMessageBox.warning(self, "热键注册失败",
-                                      "「{}」可能已被其他程序占用，请换一个组合键。".format(
-                                          dlg.result_combo))
-        self._win.apply_theme()
+    def _on_hotkey_captured(self, combo):
+        self._win.skin["hotkey_label"] = combo
+        self._win.apply_hotkey()
+        if not self._win.skin.get("hotkey_ok", False):
+            AppMessageBox.warning(self, "热键注册失败",
+                                  "「{}」可能已被其他程序占用，请点击热键文字换一个组合键。".format(combo))
 
     # -- 配置导入导出 ---------------------------------------------------------
     def _export_config(self):
@@ -968,6 +982,25 @@ class SettingsPage(QWidget):
             return
         self._win.reload_config()
         AppMessageBox.info(self, "导入成功", "配置已应用。")
+
+    def _reset_config(self):
+        """配置恢复出厂默认（重写默认配置文件并整体重载界面）"""
+        if not AppMessageBox.question(self, "恢复默认配置",
+                                      "将重置应用清单、皮肤与导航为出厂默认，\n自定义主题与收藏也会清空，确定继续？"):
+            return
+        from app.core.app_manager import DEFAULT_CATEGORIES, DEFAULT_TOOLS
+        from app.core.nav_manager import DEFAULT_NAV
+        from app.core.theme import DEFAULT_SKIN
+        try:
+            config.save_json("tools.json", {"categories": list(DEFAULT_CATEGORIES),
+                                            "tools": [dict(t) for t in DEFAULT_TOOLS]})
+            config.save_json("nav.json", {"items": [dict(it) for it in DEFAULT_NAV]})
+            config.save_json("skin.json", dict(DEFAULT_SKIN))
+        except OSError as e:
+            AppMessageBox.warning(self, "重置失败", str(e))
+            return
+        # reload_config 会重建本页，延后一拍避免在当前槽内销毁自身
+        QTimer.singleShot(0, self._win.reload_config)
 
     # -- 检查更新 -------------------------------------------------------------
     def _check_update(self):

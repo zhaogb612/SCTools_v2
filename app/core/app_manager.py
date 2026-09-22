@@ -5,8 +5,10 @@ import subprocess
 
 from app.core import config
 
-DEFAULT_CATEGORIES = ["系统工具", "磁盘工具", "硬件检测", "系统优化", "游戏工具",
+DEFAULT_CATEGORIES = ["系统工具", "磁盘工具", "硬件检测", "系统优化",
                       "网络工具", "其他工具"]
+
+FAV_VIEW = "我的收藏"  # 伪分类：侧边栏收藏视图
 
 # 默认工具指向旧项目 src/tools（相对路径）；路径缺失时可在应用内编辑修正
 def _t(*p):
@@ -18,7 +20,7 @@ DEFAULT_TOOLS = [
     {"name": "WinNTSetup", "category": "系统工具", "description": "Windows安装工具", "path": _t("system_tools", "WinNTSetup_5.4.1.0_64bit_Portable", "WinNTSetup_x64.exe"), "order": 2},
     {"name": "EasyRC", "category": "系统工具", "description": "系统安装工具", "path": _t("system_tools", "EasyRC", "EasyRCV3.exe"), "order": 3},
     {"name": "HEU KMS激活", "category": "系统工具", "description": "系统激活工具", "path": _t("system_tools", "HEU_KMS_Activator_HorseEdition.exe"), "order": 4},
-    {"name": "ResHacker", "category": "系统工具", "description": "资源工具", "path": _t("system_tools", "ResHacker", "ResHacker4.exe"), "order": 5},
+    {"name": "ResHacker", "category": "其他工具", "description": "资源工具", "path": _t("system_tools", "ResHacker", "ResHacker4.exe"), "order": 5},
 
     {"name": "CrystalDiskInfo", "category": "磁盘工具", "description": "硬盘信息检测工具", "path": _t("disk_tools", "CrystalDiskInfo", "CrystalDiskInfoPortable.exe"), "order": 6},
     {"name": "CrystalDiskMark", "category": "磁盘工具", "description": "硬盘性能测试工具", "path": _t("disk_tools", "CrystalDiskMark", "CrystalDiskMarkPortable.exe"), "order": 7},
@@ -46,7 +48,7 @@ DEFAULT_TOOLS = [
     {"name": "NDM", "category": "其他工具", "description": "多线程下载器", "path": _t("other_tools", "Neat Download Manager", "NeatDM.exe"), "order": 26},
     {"name": "QBittorrent", "category": "其他工具", "description": "种子下载器", "path": _t("other_tools", "qBittorrent", "qbittorrent.exe"), "order": 27},
     {"name": "Windows超级管理器", "category": "其他工具", "description": "Windows系统设置和监管工具", "path": _t("other_tools", "Windowscjglq.exe"), "order": 28},
-    {"name": "定时关机", "category": "其他工具", "description": "定时关机工具", "path": _t("other_tools", "定时关机 .exe"), "order": 29},
+    {"name": "定时关机", "category": "其他工具", "description": "定时关机工具", "path": _t("other_tools", "定时关机.exe"), "order": 29},
     {"name": "定时闹钟", "category": "其他工具", "description": "定时闹钟工具", "path": _t("other_tools", "定时闹钟.exe"), "order": 30},
     {"name": "图片爬取", "category": "其他工具", "description": "图片爬取工具", "path": _t("other_tools", "图片爬取.exe"), "order": 31},
     {"name": "Everything", "category": "其他工具", "description": "文件快速搜索工具", "path": _t("other_tools", "Everything", "EverythingPortable.exe"), "order": 32},
@@ -164,9 +166,13 @@ class AppManager:
 
     def by_category(self, category, keyword=""):
         kw = keyword.strip().lower()
+        if category == FAV_VIEW:
+            source = [t for t in self.tools if t.get("favorite", False)]
+        else:
+            source = self.tools
         out = []
-        for t in self.tools:
-            if category not in ("全部应用",) and t.get("category") != category:
+        for t in source:
+            if category not in ("全部应用", FAV_VIEW) and t.get("category") != category:
                 continue
             if kw and kw not in t["name"].lower() and kw not in t.get("description", "").lower():
                 continue
@@ -174,6 +180,9 @@ class AppManager:
         # 收藏置顶，其余按手动顺序
         out.sort(key=lambda t: (not t.get("favorite", False), t.get("order", 0)))
         return out
+
+    def favorites(self):
+        return [t for t in self.tools if t.get("favorite", False)]
 
     def toggle_favorite(self, name):
         t = next((t for t in self.tools if t["name"] == name), None)
