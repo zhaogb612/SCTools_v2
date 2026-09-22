@@ -8,7 +8,7 @@ from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel,
                                QScrollArea, QPushButton, QVBoxLayout, QWidget)
 
-from app.core import file_icon
+from app.core import favicon, file_icon
 from app.ui import icons
 from app.ui.dialogs import AppMessageBox, SquareMenu
 from app.ui.flow_layout import FlowLayout
@@ -102,7 +102,11 @@ class ToolCard(QFrame):
         lay.addWidget(self.run_dot)
 
     def set_running(self, running_names):
-        exe = os.path.basename(self._page._win.app_manager.resolve(self._tool.get("path", "")))
+        am = self._page._win.app_manager
+        if am.is_url(self._tool) or am.is_builtin(self._tool):
+            self.run_dot.setVisible(False)
+            return
+        exe = os.path.basename(am.resolve(self._tool.get("path", "")))
         self.run_dot.setVisible(bool(exe) and exe.lower() in running_names)
 
     # -- 图标 ---------------------------------------------------------------
@@ -110,10 +114,17 @@ class ToolCard(QFrame):
         if self.icon_label is None:
             return
         am = self._page._win.app_manager
-        ic = file_icon.icon_for(am.resolve(self._tool.get("path", "")), ICON_SIZE)
+        path = self._tool.get("path", "")
+        ic = None
+        if am.is_url(self._tool):
+            ic = favicon.load_cached(path)  # 网址卡片用站点 favicon
+        else:
+            ic = file_icon.icon_for(am.resolve(path), ICON_SIZE)
         if ic is None:
-            # 提取失败回退内置应用图标（随主题着色）
-            ic = icons.icon("app", self._page._win.palette_data()["on_brand"])
+            # 提取失败回退内置图标：内置功能用显示器图标，其余随主题着色
+            name = "monitor" if am.is_builtin(self._tool) else \
+                ("globe" if am.is_url(self._tool) else "app")
+            ic = icons.icon(name, self._page._win.palette_data()["on_brand"])
         self.icon_label.setPixmap(ic.pixmap(ICON_SIZE, ICON_SIZE))
 
     # -- 悬浮提示 ----------------------------------------------------------
@@ -248,6 +259,30 @@ class ToolsPage(QWidget):
         for card in self._cards:
             self._flow.addWidget(card)
             card.set_running(self._running)
+        self._fetch_tool_favicons(tools)
+
+    def stop_workers(self):
+        """退出前停掉 favicon 后台线程"""
+        w = getattr(self, "_tool_fav_worker", None)
+        if w is not None and w.isRunning():
+            w.stop()
+            w.wait(2000)
+
+    def _fetch_tool_favicons(self, tools):
+        """网址类卡片后台抓 favicon，完成后刷新对应卡片"""
+        am = self._win.app_manager
+        urls = [t["path"] for t in tools if am.is_url(t)]
+        if not urls:
+            return
+        worker = favicon.FaviconWorker(urls, self)
+        worker.one_done.connect(self._on_tool_favicon)
+        self._tool_fav_worker = worker  # 持引用防 GC
+        worker.start()
+
+    def _on_tool_favicon(self, url):
+        for card in self._cards:
+            if card.tool().get("path") == url:
+                card._refresh_icon()
 
     def _on_running(self, names):
         self._running = names
@@ -272,7 +307,11 @@ class ToolsPage(QWidget):
         act_fav = menu.addAction(icons.icon("star"),
                                  "取消收藏" if tool.get("favorite") else "收藏")
         act_reveal = menu.addAction(icons.icon("folder"), "打开所在目录")
-        exe = os.path.basename(self._win.app_manager.resolve(tool.get("path", "")))
+        am = self._win.app_manager
+        if am.is_url(tool) or am.is_builtin(tool):
+            exe = ""
+        else:
+            exe = os.path.basename(am.resolve(tool.get("path", "")))
         running = bool(exe) and exe.lower() in self._running
         act_kill = menu.addAction(icons.icon("close"), "结束进程") if running else None
         menu.addSeparator()

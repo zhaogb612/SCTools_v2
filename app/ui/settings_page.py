@@ -6,13 +6,14 @@ import re
 import tempfile
 
 from PySide6.QtCore import Qt, QUrl, QTimer, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QLinearGradient, QPainter
+from PySide6.QtGui import QColor, QDesktopServices, QKeySequence, QLinearGradient, QPainter
 from PySide6.QtWidgets import (QButtonGroup, QFileDialog, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QLineEdit, QProgressBar,
                                QPushButton, QScrollArea, QSlider, QTextEdit,
                                QVBoxLayout, QWidget)
 
 from app.core import config, updater
+from app.core.hotkey import parse_hotkey
 from app.core.theme import (CUSTOM_SCHEME, FONT_STACK, SCHEME_DESCS, scheme_names, palette)
 from app.ui.dialogs import AppDialog, AppMessageBox, SquareMenu
 from app.ui.flow_layout import FlowLayout
@@ -352,6 +353,50 @@ class _DownloadThread(updater.FnThread):
             self.fail.emit(str(e))
 
 
+class HotkeyCaptureDialog(AppDialog):
+    """按键捕获：按下「修饰键+主键」完成录制，Esc 取消"""
+    def __init__(self, parent):
+        super().__init__(parent, "自定义全局热键")
+        self.result_combo = None   # 录制成功的组合键文本
+        lay = self.content_layout()
+        self.lbl = QLabel("请直接按下新的快捷键组合\n（需包含 Ctrl / Alt / Shift / Win 至少一个修饰键）")
+        self.lbl.setAlignment(Qt.AlignCenter)
+        self.lbl.setFixedHeight(96)
+        self.lbl.setObjectName("Sub")
+        lay.addWidget(self.lbl)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFixedWidth(360)
+
+    def keyPressEvent(self, e):
+        key = e.key()
+        if key in (Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt, Qt.Key_Meta,
+                   Qt.Key_AltGr, Qt.Key_unknown):
+            self.lbl.setText("已按住修饰键，请继续按主键\n（字母 / 数字 / F1-F12 / 空格）")
+            return
+        if key == Qt.Key_Escape:
+            self.reject()
+            return
+        names = []
+        m = e.modifiers()
+        if m & Qt.ControlModifier:
+            names.append("Ctrl")
+        if m & Qt.AltModifier:
+            names.append("Alt")
+        if m & Qt.ShiftModifier:
+            names.append("Shift")
+        if m & Qt.MetaModifier:
+            names.append("Win")
+        if not names:
+            self.lbl.setText("必须包含 Ctrl / Alt / Shift / Win 至少一个修饰键")
+            return
+        label = "+".join(names + [QKeySequence(key).toString()])
+        if parse_hotkey(label) is None:
+            self.lbl.setText("不支持该主键，请使用字母 / 数字 / F1-F12 / 空格")
+            return
+        self.result_combo = label
+        self.accept()
+
+
 class ThemeDialog(AppDialog):
     """添加/编辑自定义主题：命名 + 主题色/字体/背景/侧栏/内容区 五项颜色自由搭配"""
 
@@ -630,16 +675,21 @@ class SettingsPage(QWidget):
         opt_row.addWidget(self.btn_icon_off)
         opt_row.addStretch()
         v1.addLayout(opt_row)
-        # 全局热键开关
+        # 全局热键开关 + 自定义
         hk_row = QHBoxLayout()
         hk_row.setSpacing(8)
         l_hk = QLabel("全局热键")
         l_hk.setObjectName("GroupTitle")
         hk_row.addWidget(l_hk)
-        tip_hk = QLabel("Ctrl+Alt+S 呼出主窗口")
-        tip_hk.setObjectName("Sub")
-        hk_row.addWidget(tip_hk)
+        self.lbl_hotkey = QLabel(self._win.skin.get("hotkey_label", "Ctrl+Alt+S"))
+        self.lbl_hotkey.setObjectName("Sub")
+        hk_row.addWidget(self.lbl_hotkey)
         hk_row.addStretch()
+        btn_hk_custom = QPushButton("自定义")
+        btn_hk_custom.setObjectName("Ghost")
+        btn_hk_custom.setCursor(Qt.PointingHandCursor)
+        btn_hk_custom.clicked.connect(self._customize_hotkey)
+        hk_row.addWidget(btn_hk_custom)
         self.btn_hk_on = QPushButton("开启")
         self.btn_hk_off = QPushButton("关闭")
         for b in (self.btn_hk_on, self.btn_hk_off):
@@ -869,6 +919,17 @@ class SettingsPage(QWidget):
     def select_hotkey(self, on):
         self._win.skin["global_hotkey"] = bool(on)
         self._win.apply_hotkey()
+
+    def _customize_hotkey(self):
+        dlg = HotkeyCaptureDialog(self)
+        if dlg.exec() and dlg.result_combo:
+            self._win.skin["hotkey_label"] = dlg.result_combo
+            self.lbl_hotkey.setText(dlg.result_combo)
+            self._win.apply_hotkey()
+            if not self._win.skin.get("hotkey_ok", False):
+                AppMessageBox.warning(self, "热键注册失败",
+                                      "「{}」可能已被其他程序占用，请换一个组合键。".format(
+                                          dlg.result_combo))
         self._win.apply_theme()
 
     # -- 配置导入导出 ---------------------------------------------------------

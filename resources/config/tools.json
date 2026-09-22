@@ -4,6 +4,7 @@
     "磁盘工具",
     "硬件检测",
     "系统优化",
+    "游戏工具",
     "其他工具",
     "网络工具"
   ],
@@ -158,7 +159,7 @@
     },
     {
       "name": "CrystalMark Retro",
-      "category": "系统优化",
+      "category": "硬件检测",
       "description": "系统性能测试工具",
       "path": "tools\\system_optimization\\CrystalMark Retro\\CrystalMarkRetroPortable.exe",
       "order": 25
@@ -179,14 +180,14 @@
     },
     {
       "name": "Windows超级管理器",
-      "category": "其他工具",
+      "category": "系统工具",
       "description": "Windows系统设置和监管工具",
       "path": "tools\\other_tools\\Windowscjglq.exe",
       "order": 29
     },
     {
       "name": "Everything",
-      "category": "其他工具",
+      "category": "系统工具",
       "description": "文件快速搜索工具",
       "path": "tools\\other_tools\\Everything\\EverythingPortable.exe",
       "order": 33
@@ -209,7 +210,7 @@
       "name": "Advanced IP Scanner",
       "category": "网络工具",
       "description": "局域网 IP 扫描工具",
-      "path": "tools\\network_tools\\Angry IP Scanner\\Advanced IP Scanner.exe",
+      "path": "tools\\network_tools\\Advanced IP Scanner\\Advanced IP Scanner.exe",
       "order": 37
     },
     {
@@ -242,21 +243,21 @@
     },
     {
       "name": "软媒清理大师",
-      "category": "系统工具",
+      "category": "系统优化",
       "description": "系统垃圾清理",
       "path": "tools\\system_tools\\魔方工具箱\\cleanmaster.exe",
       "order": 42
     },
     {
       "name": "软媒设置大师",
-      "category": "系统工具",
+      "category": "系统优化",
       "description": "系统设置优化，提升工作与游戏效率",
       "path": "tools\\system_tools\\魔方工具箱\\winmaster.exe",
       "order": 43
     },
     {
       "name": "软媒磁盘大师",
-      "category": "系统工具",
+      "category": "磁盘工具",
       "description": "磁盘（含 SSD）性能与健康度测试",
       "path": "tools\\system_tools\\魔方工具箱\\diskmaster.exe",
       "order": 44
@@ -284,10 +285,115 @@
     },
     {
       "name": "软媒美化大师",
-      "category": "系统工具",
+      "category": "系统优化",
       "description": "系统外观美化定制",
       "path": "tools\\system_tools\\魔方工具箱\\visualmaster.exe",
       "order": 48
+    },
+    {
+      "name": "DirectX Repair",
+      "category": "系统工具",
+      "description": "DirectX 修复工具（C++ 运行库一键修复）",
+      "path": "tools\\system_tools\\DirectX_Repair\\DirectX_Repair.exe",
+      "order": 49
+    },
+    {
+      "name": "Rufus",
+      "category": "系统工具",
+      "description": "U 盘启动盘制作工具",
+      "path": "tools\\system_tools\\Rufus\\Rufus.exe",
+      "order": 50
+    },
+    {
+      "name": "Ventoy2Disk",
+      "category": "系统工具",
+      "description": "U 盘多系统启动盘工具",
+      "path": "tools\\system_tools\\Ventoy\\Ventoy2Disk.exe",
+      "order": 51
+    },
+    {
+      "name": "procexp(64位)",
+      "category": "系统工具",
+      "description": "Process Explorer 进程管理器（64 位）",
+      "path": "tools\\system_tools\\ProcessExplorer\\procexp64.exe",
+      "order": 52
+    },
+    {
+      "name": "procexp(32位)",
+      "category": "系统工具",
+      "description": "Process Explorer 进程管理器（32 位）",
+      "path": "tools\\system_tools\\ProcessExplorer\\procexp32.exe",
+      "order": 53
+    },
+    {
+      "name": "FanControl",
+      "category": "硬件检测",
+      "description": "风扇转速智能控制",
+      "path": "tools\\hardware_detection\\FanControl\\FanControl.exe",
+      "order": 54
+    },
+    {
+      "name": "屏幕坏点漏光测试",
+      "category": "硬件检测",
+      "description": "内置全屏纯色检测（坏点/漏光，自动轮播）",
+      "path": "builtin://screen_test",
+      "order": 55
+    },
+    {
+      "name": "Steam 官方下载",
+      "category": "游戏工具",
+      "description": "Steam 平台下载（网址卡片）",
+      "path": "https://store.steampowered.com/about/",
+      "order": 56
+    },
+    {
+      "name": "Epic 官方下载",
+      "category": "游戏工具",
+      "description": "Epic 平台下载（网址卡片）",
+      "path": "https://store.epicgames.com/zh-CN/",
+      "order": 57
+    },
+    {
+      "name": "EA App 官方下载",
+      "category": "游戏工具",
+      "description": "EA App 平台下载（网址卡片）",
+      "path": "https://www.ea.com/ea-app",
+      "order": 58
+    },
+    {
+      "name": "战网游戏平台",
+      "category": "游戏工具",
+      "description": "暴雪战网下载（网址卡片）",
+      "path": "https://download.battle.net/",
+      "order": 59
+    },
+    {
+      "name": "微星小飞机",
+      "category": "游戏工具",
+      "description": "MSI Afterburner 显卡监控/超频（下载页）",
+      "path": "https://www.msi.com/Landing/afterburner",
+      "order": 60
+    },
+    {
+      "name": "风灵月影",
+      "category": "游戏工具",
+      "description": "FlingTrainer 修改器官网（网址卡片）",
+      "path": "https://flingtrainer.com/",
+      "order": 61
+    },
+    {
+      "name": "迅游加速器",
+      "category": "游戏工具",
+      "description": "迅游加速器官网（网址卡片）",
+      "path": "https://www.xunyou.com/",
+      "order": 62
+    },
+    {
+      "name": "雷神加速器",
+      "category": "游戏工具",
+      "description": "雷神加速器官网（网址卡片）",
+      "path": "https://www.leigod.com/",
+      "order": 63
     }
   ]
 }

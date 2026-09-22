@@ -563,6 +563,12 @@
       "url": "https://www.hupu.com/",
       "description": "体育社区",
       "group": "常用网站"
+    },
+    {
+      "name": "NEXT ITellYou",
+      "url": "https://next.itellyou.cn/",
+      "description": "Windows 原版系统镜像下载",
+      "group": "官方下载"
     }
   ]
 }

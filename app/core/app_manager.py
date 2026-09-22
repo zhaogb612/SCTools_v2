@@ -5,7 +5,8 @@ import subprocess
 
 from app.core import config
 
-DEFAULT_CATEGORIES = ["系统工具", "磁盘工具", "硬件检测", "系统优化", "其他工具"]
+DEFAULT_CATEGORIES = ["系统工具", "磁盘工具", "硬件检测", "系统优化", "游戏工具",
+                      "网络工具", "其他工具"]
 
 # 默认工具指向旧项目 src/tools（相对路径）；路径缺失时可在应用内编辑修正
 def _t(*p):
@@ -54,6 +55,7 @@ DEFAULT_TOOLS = [
 
 class AppManager:
     def __init__(self):
+        self.builtin_handler = None  # 由主窗口注入：处理 builtin:// 内置功能
         data = config.load_json("tools.json", {"categories": DEFAULT_CATEGORIES, "tools": DEFAULT_TOOLS})
         self.categories = data.get("categories", list(DEFAULT_CATEGORIES))
         self.tools = data.get("tools", list(DEFAULT_TOOLS))
@@ -97,21 +99,39 @@ class AppManager:
             t.setdefault("order", i)
         self._migrate_paths()
 
+    def is_url(self, tool):
+        return str(tool.get("path", "")).lower().startswith(("http://", "https://"))
+
+    def is_builtin(self, tool):
+        return str(tool.get("path", "")).startswith("builtin://")
+
     def resolve(self, path):
         if os.path.isabs(path):
             return os.path.normpath(path)
         return os.path.normpath(os.path.join(config.APP_DIR, path))
 
     def exists(self, tool):
+        if self.is_url(tool) or self.is_builtin(tool):
+            return True
         return os.path.exists(self.resolve(tool.get("path", "")))
 
     def launch(self, tool):
-        p = self.resolve(tool["path"])
-        if not os.path.exists(p):
-            raise FileNotFoundError(p)
-        os.startfile(p)
+        p = tool.get("path", "")
+        if self.is_builtin(tool):
+            if self.builtin_handler:
+                self.builtin_handler(p.split("://", 1)[1])
+            return
+        if self.is_url(tool):
+            os.startfile(p)  # 网址类卡片：直接打开浏览器
+            return
+        full = self.resolve(p)
+        if not os.path.exists(full):
+            raise FileNotFoundError(full)
+        os.startfile(full)
 
     def reveal(self, tool):
+        if self.is_url(tool) or self.is_builtin(tool):
+            raise OSError("网址/内置功能类应用没有所在目录")
         p = self.resolve(tool["path"])
         if not os.path.exists(p):
             raise FileNotFoundError(p)

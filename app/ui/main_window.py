@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsBlurEffect,
 
 from app.core import config
 from app.core.app_manager import AppManager
-from app.core.hotkey import CHOICES, HotkeyManager
+from app.core.hotkey import HotkeyManager, parse_hotkey
 from app.core.nav_manager import NavManager
 from app.core.theme import DEFAULT_SKIN, SCHEMES, build_qss, palette
 from app.ui import icons
@@ -23,7 +23,8 @@ from app.ui.title_bar import TitleBar
 from app.ui.tools_page import ToolsPage
 
 CATEGORY_ICON = {"系统工具": "system", "磁盘工具": "disk", "硬件检测": "chip",
-                 "系统优化": "spark", "其他工具": "layers"}
+                 "系统优化": "spark", "其他工具": "layers", "网络工具": "globe",
+                 "游戏工具": "game"}
 
 NAV_PAGE_NAME = "网站导航"
 SET_PAGE_NAME = "设置与皮肤"
@@ -44,6 +45,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(920, 600)
 
         self.app_manager = AppManager()
+        self.app_manager.builtin_handler = self._open_builtin  # 内置功能（坏点检测等）
         self.nav_manager = NavManager()
         self.skin = config.load_json("skin.json", dict(DEFAULT_SKIN))
         self._palette_data = palette(self.skin.get("scheme", "晴空蓝"), self.skin.get("mode", "day"))
@@ -113,11 +115,14 @@ class MainWindow(QMainWindow):
     # -- 全局热键 -----------------------------------------------------------
     def apply_hotkey(self):
         if self.skin.get("global_hotkey", True):
-            _name, mods, vk = CHOICES[0]
-            ok = self.hotkey.register(mods, vk)
+            parsed = parse_hotkey(self.skin.get("hotkey_label", "Ctrl+Alt+S"))
+            if parsed is None:  # 配置损坏时回退默认
+                parsed = parse_hotkey("Ctrl+Alt+S")
+            ok = self.hotkey.register(*parsed)
             self.skin["hotkey_ok"] = bool(ok)
         else:
             self.hotkey.unregister()
+        config.save_json("skin.json", self.skin)
 
     def _hotkey_raise(self):
         if self.isMinimized():
@@ -126,10 +131,17 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
+    def _open_builtin(self, name):
+        """内置功能入口（builtin://name），目前：屏幕坏点/漏光测试"""
+        if name == "screen_test":
+            from app.ui.screen_test import ScreenTestDialog
+            ScreenTestDialog(self).exec()
+
     def closeEvent(self, event):
         # 停掉后台线程，避免退出时 QThread 仍在运行
         self.tools_page._watcher.stop()
         self.tools_page._watcher.wait(3000)
+        self.tools_page.stop_workers()
         self.nav_page.stop_workers()
         self.hotkey.unregister()
         super().closeEvent(event)
