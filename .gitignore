@@ -21,6 +21,9 @@ resources/config/skin.json
 _skin_bak.json
 installer/assets/payload.zip
 
+# 内部规划文档（不上传）
+docs/*.md
+
 # Python
 __pycache__/
 *.pyc
