@@ -51,7 +51,7 @@ SCHEME_DESCS = {
 
 DEFAULT_SKIN = {"scheme": "晴空蓝", "mode": "day", "bg_image": "", "opacity": 92, "blur": 30,
                 "custom_brand": "", "custom_bg": "", "custom_themes": [],
-                "titlebar_style": "system", "show_tool_icons": True,
+                "titlebar_style": "mac", "show_tool_icons": True,
                 "splash_mode": "random", "splash_custom": "",
                 "splash_ratio": 40}
 

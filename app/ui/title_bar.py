@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """标题栏：控制按钮支持两种样式——mac（红黄绿三色圆点）与 system（— □ × 原生样式），
-默认 system；中部为悬浮提示区。无边框窗口由主窗口负责边缘拖拽缩放。"""
+默认 mac；中部为悬浮提示区。无边框窗口由主窗口负责边缘拖拽缩放。"""
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QApplication
 
