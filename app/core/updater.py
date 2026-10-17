@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """自动更新：GitHub Releases 检查新版本 + 下载资产。
-REPO 为 GitHub 仓库 owner/name；Release 资产上传安装包 exe（名字含"安装"或"Setup"）。"""
+REPO 为 GitHub 仓库 owner/name；Release 资产上传安装包 exe（名字含"安装"或"Setup"优先，其余 exe 回退匹配）。"""
 import json
 import urllib.request
 
@@ -45,12 +45,12 @@ def fetch_latest(timeout=8):
     tag = data.get("tag_name", "")
     if not tag or not compare_ver(tag, config.APP_VER):
         return None
-    asset = None
-    for a in data.get("assets", []):
-        name = a.get("name", "")
-        if name.endswith(".exe") and ("安装" in name or "Setup" in name or "setup" in name):
-            asset = a
-            break
+    # 优先取名字含"安装/Setup"的 exe；若上传环节吞掉中文导致名字异常，回退到 exe 资产
+    exes = [a for a in data.get("assets", []) if (a.get("name") or "").endswith(".exe")]
+    asset = next((a for a in exes
+                  if "安装" in a["name"] or "setup" in a["name"].lower()), None)
+    if asset is None and exes:
+        asset = exes[0]
     return {
         "version": tag,
         "notes": data.get("body") or "",
