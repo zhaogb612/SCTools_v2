@@ -35,7 +35,7 @@ class TitleBar(QFrame):
         self._logo_label = logo
         lay.addWidget(logo)
 
-        title = QLabel("SC Tools")
+        title = QLabel("SCTools2")
         title.setObjectName("AppTitle")
         lay.addWidget(title)
 

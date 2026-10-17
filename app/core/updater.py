@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """自动更新：GitHub Releases 检查新版本 + 下载资产。
-仓库建好后把 REPO 改成 owner/name 即可；Release 资产上传安装包 exe（名字含"安装程序"）。"""
+REPO 为 GitHub 仓库 owner/name；Release 资产上传安装包 exe（名字含"安装"或"Setup"）。"""
 import json
 import urllib.request
 
@@ -8,7 +8,7 @@ from PySide6.QtCore import QThread, Signal
 
 from app.core import config
 
-REPO = "Z1321/SCTools"   # TODO: 发布时改成实际 GitHub 仓库（owner/name）
+REPO = "zhaogb612/SCTools_v2"   # GitHub 仓库 owner/name，与 Release tag（形如 v3.0）对应
 API = "https://api.github.com/repos/{}/releases/latest".format(REPO)
 RELEASES_PAGE = "https://github.com/{}/releases/latest".format(REPO)
 _UA = {"User-Agent": "SC-Tools-Updater"}
@@ -48,7 +48,7 @@ def fetch_latest(timeout=8):
     asset = None
     for a in data.get("assets", []):
         name = a.get("name", "")
-        if name.endswith(".exe") and ("安装程序" in name or "Setup" in name or "setup" in name):
+        if name.endswith(".exe") and ("安装" in name or "Setup" in name or "setup" in name):
             asset = a
             break
     return {

@@ -84,6 +84,50 @@ DEFAULT_NAV = [
     {"name": "网易有道翻译", "url": "https://fanyi.youdao.com/", "description": "在线翻译工具", "group": "常用软件"},
 ]
 
+# 第七轮分组扩充（按 名称+分组 去重后自动合并进已有配置）
+DEFAULT_NAV.extend([
+    # 社交媒体
+    {"name": "Reddit", "url": "https://www.reddit.com/", "description": "全球社区论坛（需科学上网）", "group": "社交媒体"},
+    {"name": "TikTok", "url": "https://www.tiktok.com/", "description": "抖音国际版（需科学上网）", "group": "社交媒体"},
+
+    # 官方下载
+    {"name": "Rufus", "url": "https://rufus.ie/zh/", "description": "U 盘启动盘制作工具", "group": "官方下载"},
+    {"name": "Free Download Manager", "url": "https://www.freedownloadmanager.org/zh/", "description": "免费多线程下载器", "group": "官方下载"},
+    {"name": "Bandizip", "url": "https://www.bandisoft.com/", "description": "免费压缩工具", "group": "官方下载"},
+    {"name": "ShareX", "url": "https://getsharex.com/", "description": "开源截图/录屏/OCR 工具", "group": "官方下载"},
+    {"name": "Sumatra PDF", "url": "https://www.sumatrapdfreader.org/", "description": "轻量开源 PDF 阅读器", "group": "官方下载"},
+
+    # 搜索引擎
+    {"name": "夸克", "url": "https://quark.sm.cn/", "description": "UC 旗下简洁搜索", "group": "搜索引擎"},
+    {"name": "Yandex", "url": "https://yandex.com/", "description": "俄罗斯搜索引擎", "group": "搜索引擎"},
+    {"name": "Startpage", "url": "https://www.startpage.com/", "description": "谷歌结果的隐私代理搜索", "group": "搜索引擎"},
+    {"name": "Brave Search", "url": "https://search.brave.com/", "description": "独立索引搜索引擎", "group": "搜索引擎"},
+
+    # 知识社区
+    {"name": "SegmentFault 思否", "url": "https://segmentfault.com/", "description": "程序员问答社区", "group": "知识社区"},
+    {"name": "开源中国", "url": "https://www.oschina.net/", "description": "开源技术社区与资讯", "group": "知识社区"},
+    {"name": "菜鸟教程", "url": "https://www.runoob.com/", "description": "编程入门教程站", "group": "知识社区"},
+
+    # 美化资源
+    {"name": "Pixiv", "url": "https://www.pixiv.net/", "description": "插画作品社区（需科学上网）", "group": "美化资源"},
+    {"name": "花瓣网", "url": "https://huaban.com/", "description": "图片素材采集平台", "group": "美化资源"},
+    {"name": "Dribbble", "url": "https://dribbble.com/", "description": "全球设计师作品社区", "group": "美化资源"},
+    {"name": "Wallpaper Engine 创意工坊", "url": "https://steamcommunity.com/app/431960/workshop/", "description": "动态壁纸工坊", "group": "美化资源"},
+
+    # 科技资讯
+    {"name": "酷安", "url": "https://www.coolapk.com/", "description": "数码应用社区", "group": "科技资讯"},
+    {"name": "Chiphell", "url": "https://www.chiphell.com/", "description": "硬件发烧友论坛", "group": "科技资讯"},
+    {"name": "太平洋科技", "url": "https://www.pconline.com.cn/", "description": "数码硬件资讯", "group": "科技资讯"},
+    {"name": "The Verge", "url": "https://www.theverge.com/", "description": "国际科技媒体（需科学上网）", "group": "科技资讯"},
+
+    # 常用网站
+    {"name": "YouTube", "url": "https://www.youtube.com/", "description": "全球视频平台（需科学上网）", "group": "常用网站"},
+    {"name": "拼多多", "url": "https://www.pinduoduo.com/", "description": "电商平台", "group": "常用网站"},
+    {"name": "闲鱼", "url": "https://www.goofish.com/", "description": "二手交易平台", "group": "常用网站"},
+    {"name": "百度网盘", "url": "https://pan.baidu.com/", "description": "个人云存储", "group": "常用网站"},
+    {"name": "阿里云盘", "url": "https://www.alipan.com/", "description": "不限速网盘", "group": "常用网站"},
+])
+
 DEFAULT_NAV.extend(GAME_NAV)  # 并入游戏工具分组，缺失项启动时自动补进配置
 
 

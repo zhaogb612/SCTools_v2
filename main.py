@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SCTools 工具箱 v3.0 (PySide6) 入口"""
+"""SCTools2 工具箱入口（PySide6）"""
 import os
 import sys
+import time
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -14,7 +16,7 @@ from app.ui.main_window import MainWindow, APP_ICON
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("SC Tools")
+    app.setApplicationName("SCTools2")
     if os.path.exists(APP_ICON):
         app.setWindowIcon(QIcon(APP_ICON))
 
@@ -27,8 +29,31 @@ def main():
     _ = FONT_STACK  # QSS 内同步使用回退链
 
     icons.ensure_icon_files()
+
+    # 启动图：MainWindow 构建期间展示，主窗口就绪后保底停留 3s 再关闭
+    from app.core import config
+    from app.core.theme import DEFAULT_SKIN
+    app.setApplicationVersion(config.APP_VER)
+    from app.ui.splash import SplashWindow, resolve_path
+    splash = None
+    t0 = time.monotonic()
+    skin = config.load_json("skin.json", dict(DEFAULT_SKIN))
+    sp = resolve_path(skin)
+    if sp:
+        splash = SplashWindow(sp, skin)
+        splash.show()
+        splash.start()  # 启动 GIF 播放
+        # 多轮 processEvents 确保首帧真正绘制出来，再进入耗时初始化
+        for _ in range(6):
+            app.processEvents()
+            time.sleep(0.02)
+        app.processEvents()
+
     win = MainWindow()
     win.show()
+    if splash is not None:
+        remain = int(3000 - (time.monotonic() - t0) * 1000)
+        QTimer.singleShot(max(0, remain), splash.finish)
     sys.exit(app.exec_())
 
 

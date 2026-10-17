@@ -330,11 +330,13 @@ class UpdateDialog(AppDialog):
 
     def _on_downloaded(self, _dest):
         self._prog.setValue(100)
-        self._status.setText("下载完成，正在启动安装程序（将自动覆盖安装）...")
+        self._status.setText("下载完成，正在静默更新（完成后应用将自动重启）...")
+        # 静默模式：安装器自动定位已装目录、结束本程序、覆盖更新并保留配置
+        import subprocess
         try:
-            os.startfile(self._dest)
+            subprocess.Popen([self._dest, "--silent"])
         except OSError as e:
-            self._status.setText("安装包位置：{}\n（{}）".format(self._dest, e))
+            self._status.setText("安装包位置：{}（可手动运行）\n（{}）".format(self._dest, e))
 
 
 class _DownloadThread(updater.FnThread):
@@ -720,6 +722,54 @@ class SettingsPage(QWidget):
         hk_row.addWidget(self.btn_hk_on)
         hk_row.addWidget(self.btn_hk_off)
         v1.addLayout(hk_row)
+        # 启动图：随机（默认图+自添加图池）/自定义/关闭，自添加图复制进用户启动图目录
+        sp_row = QHBoxLayout()
+        sp_row.setSpacing(8)
+        l_sp = QLabel("启动图")
+        l_sp.setObjectName("GroupTitle")
+        sp_row.addWidget(l_sp)
+        self.btn_sp_random = QPushButton("随机")
+        self.btn_sp_custom = QPushButton("自定义")
+        self.btn_sp_off = QPushButton("关闭")
+        for b in (self.btn_sp_random, self.btn_sp_custom, self.btn_sp_off):
+            b.setObjectName("Ghost")
+            b.setCheckable(True)
+            b.setCursor(Qt.PointingHandCursor)
+        self._sp_group = QButtonGroup(self)
+        for b in (self.btn_sp_random, self.btn_sp_custom, self.btn_sp_off):
+            self._sp_group.addButton(b)
+        self._sp_group.setExclusive(True)
+        self.btn_sp_random.clicked.connect(lambda: self.select_splash("random"))
+        self.btn_sp_custom.clicked.connect(lambda: self.select_splash("custom"))
+        self.btn_sp_off.clicked.connect(lambda: self.select_splash("off"))
+        self.lbl_splash = QLabel("")
+        self.lbl_splash.setObjectName("Sub")
+        sp_row.addWidget(self.btn_sp_random)
+        sp_row.addWidget(self.btn_sp_custom)
+        sp_row.addWidget(self.btn_sp_off)
+        # 尺寸滑条：图片短边占屏幕短边的百分比，实时拖拽调节
+        l_sp_size = QLabel("尺寸")
+        l_sp_size.setObjectName("GroupTitle")
+        sp_row.addWidget(l_sp_size)
+        self.sl_splash = QSlider(Qt.Horizontal)
+        self.sl_splash.setRange(5, 80)
+        self.sl_splash.setValue(int(skin.get("splash_ratio", 40)))
+        self.sl_splash.setFixedWidth(140)
+        self.sl_splash.setCursor(Qt.PointingHandCursor)
+        self.lbl_sp_ratio = QLabel("{}%".format(self.sl_splash.value()))
+        self.lbl_sp_ratio.setObjectName("Sub")
+        self.sl_splash.valueChanged.connect(self._on_splash_ratio)
+        sp_row.addWidget(self.sl_splash)
+        sp_row.addWidget(self.lbl_sp_ratio)
+        sp_row.addStretch()
+        sp_row.addWidget(self.lbl_splash)
+        self.btn_sp_add = QPushButton("添加图片")
+        self.btn_sp_add.setObjectName("Ghost")
+        self.btn_sp_add.setCursor(Qt.PointingHandCursor)
+        self.btn_sp_add.clicked.connect(self._pick_splash)
+        sp_row.addWidget(self.btn_sp_add)
+        v1.addLayout(sp_row)
+        self._refresh_splash_row()
         root.addWidget(sec1)
 
         # 背景图
@@ -791,7 +841,7 @@ class SettingsPage(QWidget):
         v4.setSpacing(10)
         ver_row = QHBoxLayout()
         ver_row.setSpacing(8)
-        about = QLabel("SC Tools v{} (PySide6)    作者：沙尘612".format(config.APP_VER))
+        about = QLabel("SCTools2 v{} (PySide6)    作者：沙尘612    开源协议：MIT".format(config.APP_VER))
         about.setObjectName("Sub")
         ver_row.addWidget(about)
         ver_row.addStretch()
@@ -933,11 +983,62 @@ class SettingsPage(QWidget):
     def select_tool_icons(self, on):
         self._win.skin["show_tool_icons"] = bool(on)
         self._win.tools_page.rebuild()
+        self._win.nav_page.refresh_icons()  # 网站导航 favicon 同步显隐
         self._win.apply_theme()
 
     def select_hotkey(self, on):
         self._win.skin["global_hotkey"] = bool(on)
         self._win.apply_hotkey()
+
+    # -- 启动图 ---------------------------------------------------------------
+    def select_splash(self, mode):
+        self._win.skin["splash_mode"] = mode
+        self._win.apply_theme()
+        self._refresh_splash_row()
+
+    def select_splash_size(self, size_mode):
+        self._win.skin["splash_size_mode"] = size_mode
+        self._win.apply_theme()
+
+    def _on_splash_ratio(self, v):
+        """启动图尺寸滑条：百分比写入配置并刷新显示"""
+        self.lbl_sp_ratio.setText("{}%".format(v))
+        self._win.skin["splash_ratio"] = int(v)
+        self._win.apply_theme()
+
+    def _pick_splash(self):
+        from app.ui.splash import user_dir
+        path, _ = QFileDialog.getOpenFileName(
+            self, "添加启动图", "", "图片 (*.gif *.png *.jpg *.jpeg *.webp *.bmp)")
+        if not path:
+            return
+        import shutil
+        dst = os.path.join(user_dir(), os.path.basename(path))
+        try:
+            if os.path.abspath(path) != os.path.abspath(dst):
+                shutil.copyfile(path, dst)
+        except Exception:
+            AppMessageBox.warning(self, "添加失败", "无法复制文件到用户启动图目录。")
+            return
+        self._win.skin["splash_mode"] = "custom"
+        self._win.skin["splash_custom"] = dst
+        self._win.apply_theme()
+        self._refresh_splash_row()
+
+    def _refresh_splash_row(self):
+        mode = self._win.skin.get("splash_mode", "random")
+        (self.btn_sp_random if mode == "random" else
+         self.btn_sp_custom if mode == "custom" else self.btn_sp_off).setChecked(True)
+        self.sl_splash.blockSignals(True)
+        self.sl_splash.setValue(int(self._win.skin.get("splash_ratio", 40)))
+        self.sl_splash.blockSignals(False)
+        self.lbl_sp_ratio.setText("{}%".format(self.sl_splash.value()))
+        from app.ui.splash import list_images
+        custom = self._win.skin.get("splash_custom", "")
+        if mode == "custom" and custom:
+            self.lbl_splash.setText("当前：" + os.path.basename(custom))
+        else:
+            self.lbl_splash.setText("图池 {} 张（默认 + 自添加）".format(len(list_images())))
 
     def _on_hotkey_captured(self, combo):
         self._win.skin["hotkey_label"] = combo

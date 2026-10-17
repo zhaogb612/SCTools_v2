@@ -21,24 +21,36 @@ class NavChip(QFrame):
         self._page = page
         self._item = item
         self.setObjectName("Chip")
-        self.setFixedSize(CHIP_W, CHIP_H)
+        self.setFixedHeight(CHIP_H)
+        self.setMinimumWidth(140)  # 宽度由填满式布局按行均分
         self.setCursor(Qt.PointingHandCursor)
 
         lay = QHBoxLayout(self)
         lay.setContentsMargins(12, 0, 10, 0)
         lay.setSpacing(8)
-        self.fav_label = QLabel()
-        self.fav_label.setFixedSize(FAV_SIZE, FAV_SIZE)
-        self.fav_label.setAlignment(Qt.AlignCenter)
-        self.set_favicon()
-        lay.addWidget(self.fav_label)
+        self.fav_label = None  # favicon 标签，随图标显示设置动态创建/隐藏
+        self.apply_icon_setting()
         self.name_label = QLabel(item["name"])
         self.name_label.setObjectName("CardName")
         self.name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         lay.addWidget(self.name_label, 1)
 
+    def apply_icon_setting(self):
+        """同步应用卡片图标设置：开启时创建/显示 favicon，关闭时隐藏"""
+        on = self._page.show_icons()
+        if on and self.fav_label is None:
+            self.fav_label = QLabel()
+            self.fav_label.setFixedSize(FAV_SIZE, FAV_SIZE)
+            self.fav_label.setAlignment(Qt.AlignCenter)
+            self.layout().insertWidget(0, self.fav_label)  # 图标固定在名称左侧
+            self.set_favicon()
+        if self.fav_label is not None:
+            self.fav_label.setVisible(on)
+
     def set_favicon(self):
         """缓存命中显示 favicon，否则用默认 globe 图标（随主题着色）"""
+        if self.fav_label is None:
+            return
         ic = favicon.load_cached(self._item["url"])
         if ic is None:
             ic = icons.icon("globe", self._page._win.palette_data()["sub"])
@@ -174,6 +186,13 @@ class NavPage(QWidget):
     def set_hint(self, text):
         self._win.set_hint(text)
 
+    def show_icons(self):
+        return bool(self._win.skin.get("show_tool_icons", True))
+
+    def refresh_icons(self):
+        """应用卡片图标设置变化时，同步导航卡片的 favicon 显隐"""
+        self._walk_chips(lambda chip: chip.apply_icon_setting())
+
     def refresh_theme(self):
         # favicon 为彩色位图无需换色，仅默认 globe 图标随主题着色
         self._walk_chips(lambda chip: chip.set_favicon())
@@ -226,7 +245,7 @@ class NavPage(QWidget):
             return
         nm = self._win.nav_manager
         host = QWidget()
-        flow = FlowLayout(host, spacing=8)
+        flow = FlowLayout(host, spacing=8, fill_min=CHIP_W, stretch_last=True)
         items = nm.by_group(group)
         for item in items:
             flow.addWidget(NavChip(self, item))

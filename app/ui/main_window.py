@@ -38,7 +38,7 @@ _EDGE = 6  # 边缘拖拽缩放热区宽度
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SC Tools")
+        self.setWindowTitle("SCTools2 v" + config.APP_VER)
         self.setWindowFlag(Qt.FramelessWindowHint)
         if os.path.exists(APP_ICON):
             self.setWindowIcon(QIcon(APP_ICON))
@@ -133,12 +133,16 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def _open_builtin(self, name):
-        """内置功能入口（builtin://name），目前：屏幕坏点/漏光测试"""
-        if name == "screen_test":
-            from app.ui.screen_test import ScreenTestDialog
-            dlg = ScreenTestDialog(self)
-            dlg.setWindowFlag(Qt.Window)
-            dlg.show()
+        """内置功能入口（builtin://name）：插件位于 tools/builtin/<name>.py，
+        每个插件提供 run(parent)；动态加载，便于把自研工具与界面代码分离"""
+        path = os.path.join(config.APP_DIR, "tools", "builtin", name + ".py")
+        if not os.path.isfile(path):
+            return
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("builtin_" + name, path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.run(self)
 
     def closeEvent(self, event):
         # 停掉后台线程，避免退出时 QThread 仍在运行
@@ -193,7 +197,7 @@ class MainWindow(QMainWindow):
             return "设置：配色方案、日/夜模式、背景图与透明度"
         if w is self.check_page:
             return "配置检测：查看本机硬件与系统配置（CPU/内存/显卡/硬盘等）"
-        return "SC Tools"
+        return "SCTools2 v" + config.APP_VER
 
     def _on_nav_hover(self, item):
         name = item.text()

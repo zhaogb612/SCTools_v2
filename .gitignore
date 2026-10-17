@@ -5,12 +5,20 @@ dist_installer/
 installer/build/
 installer/dist/
 
+# 发布产物（绿色版 7z / 安装版 exe，作为 Release 资产上传，不入库）
+release/
+*.7z
+
 # 大体积第三方工具与运行时释放资源（发布时由安装包/Release 提供）
 tools/
 resources/icons/
 resources/skins/
 
-# 载荷 zip（构建脚本生成）
+# 运行期生成的用户配置（含个人背景图等本机路径，不随仓库分发，首启自动生成）
+resources/config/skin.json
+
+# 个人备份与载荷 zip
+_skin_bak.json
 installer/assets/payload.zip
 
 # Python

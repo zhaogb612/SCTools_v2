@@ -15,8 +15,11 @@ class SquareMenu(QMenu):
     def __init__(self, parent=None):
         super().__init__(parent)
         if sys.platform == "win32":
-            # 开启半透明：QSS 中的 rgba 背景才能生效，面板不透明度设置对菜单可见
+            # 半透明 + 关闭系统投影：投影会强制弹窗走不透明合成路径，
+            # 导致 QSS rgba 与面板不透明度设置对菜单失效
             self.setAttribute(Qt.WA_TranslucentBackground, True)
+            self.setWindowFlags(self.windowFlags()
+                                | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
 
     def showEvent(self, event):
         super().showEvent(event)

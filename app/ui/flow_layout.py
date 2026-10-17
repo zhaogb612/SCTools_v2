@@ -5,12 +5,14 @@ from PySide6.QtWidgets import QLayout, QSizePolicy, QWidgetItem
 
 
 class FlowLayout(QLayout):
-    def __init__(self, parent=None, spacing=10, fill_min=0):
-        """fill_min>0 时启用填满模式：按可用宽度和最小卡宽算列数，每行卡片均分宽度不留空隙"""
+    def __init__(self, parent=None, spacing=10, fill_min=0, stretch_last=False):
+        """fill_min>0 时启用填满模式：按可用宽度和最小卡宽算列数，每行卡片均分宽度不留空隙
+        stretch_last：末行不满列数时，末行卡片也拉伸占满整行（右侧不留空位）"""
         super().__init__(parent)
         self.setContentsMargins(0, 0, 0, 0)
         self._spacing = spacing
         self._fill_min = fill_min
+        self._stretch_last = stretch_last
         self._items = []
 
     def addItem(self, item):
@@ -63,17 +65,21 @@ class FlowLayout(QLayout):
         if self._fill_min > 0:
             avail = right - x + 1
             cols = max(1, int((avail + self._spacing) // (self._fill_min + self._spacing)))
-            item_w = (avail - (cols - 1) * self._spacing) / cols
+            n = len(self._items)
+            full_rows = n // cols
             row_h = 0
             for i, item in enumerate(self._items):
-                col = i % cols
+                row, col = i // cols, i % cols
+                # stretch_last：末行按实际卡数均分整行宽
+                in_row = cols if (row < full_rows or not self._stretch_last) else (n % cols)
+                w = (avail - (in_row - 1) * self._spacing) / in_row
                 h = item.sizeHint().height()
                 if col == 0 and i > 0:
                     y += row_h + self._spacing
                     row_h = 0
                 if not test_only:
-                    item.setGeometry(QRect(QPoint(int(x + col * (item_w + self._spacing)), y),
-                                           QSize(int(item_w), h)))
+                    item.setGeometry(QRect(QPoint(int(x + col * (w + self._spacing)), y),
+                                           QSize(int(w), h)))
                 row_h = max(row_h, h)
             return y + row_h - rect.y() + m.bottom()
         line_height = 0

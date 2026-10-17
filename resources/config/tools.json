@@ -41,7 +41,7 @@
       "name": "ResHacker",
       "category": "其他工具",
       "description": "资源工具",
-      "path": "tools\\system_tools\\ResHacker\\ResHacker4.exe",
+      "path": "tools\\other_tools\\ResHacker\\ResHacker4.exe",
       "order": 1,
       "favorite": false
     },
@@ -161,7 +161,7 @@
       "name": "CrystalMark Retro",
       "category": "硬件检测",
       "description": "系统性能测试工具",
-      "path": "tools\\system_optimization\\CrystalMark Retro\\CrystalMarkRetroPortable.exe",
+      "path": "tools\\hardware_detection\\CrystalMark Retro\\CrystalMarkRetroPortable.exe",
       "order": 25
     },
     {
@@ -238,7 +238,7 @@
       "name": "FastCopy",
       "category": "其他工具",
       "description": "高速文件拷贝工具",
-      "path": "tools\\system_optimization\\FastCopy  5.12.0.exe",
+      "path": "tools\\other_tools\\FastCopy  5.12.0.exe",
       "order": 41
     },
     {
@@ -267,7 +267,8 @@
       "category": "系统工具",
       "description": "记录蓝屏并分析原因与解决方案",
       "path": "tools\\system_tools\\魔方工具箱\\bsodhelper.exe",
-      "order": 45
+      "order": 45,
+      "favorite": false
     },
     {
       "name": "软媒文件大师",
@@ -294,7 +295,7 @@
       "name": "DirectX Repair",
       "category": "其他工具",
       "description": "DirectX 修复工具（C++ 运行库一键修复）",
-      "path": "tools\\system_tools\\DirectX_Repair\\DirectX Repair.exe",
+      "path": "tools\\other_tools\\DirectX_Repair\\DirectX Repair.exe",
       "order": 49
     },
     {
@@ -308,7 +309,7 @@
       "name": "Ventoy2Disk",
       "category": "其他工具",
       "description": "U 盘多系统启动盘工具",
-      "path": "tools\\system_tools\\Ventoy\\Ventoy2Disk.exe",
+      "path": "tools\\other_tools\\Ventoy\\Ventoy2Disk.exe",
       "order": 51
     },
     {
@@ -329,7 +330,7 @@
       "name": "FanControl",
       "category": "其他工具",
       "description": "风扇转速智能控制",
-      "path": "tools\\hardware_detection\\FanControl\\FanControl.exe",
+      "path": "tools\\other_tools\\FanControl\\FanControl.exe",
       "order": 54
     },
     {

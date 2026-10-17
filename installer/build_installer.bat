@@ -18,11 +18,11 @@ cd installer
 cd ..
 
 echo [4/4] 拼接载荷到安装器尾部，输出单文件安装包...
-if exist "dist_installer\SC Tools安装程序.exe" del /q "dist_installer\SC Tools安装程序.exe"
-copy /b "installer\dist\SC_Tools_Setup_tmp.exe" + "installer\assets\payload.zip" "dist_installer\SC Tools安装程序.exe" >nul || goto :err
+if exist "dist_installer\SCTools2安装程序.exe" del /q "dist_installer\SCTools2安装程序.exe"
+copy /b "installer\dist\SC_Tools_Setup_tmp.exe" + "installer\assets\payload.zip" "dist_installer\SCTools2安装程序.exe" >nul || goto :err
 
 echo.
-echo 完成：dist_installer\SC Tools安装程序.exe（单文件，双击安装）
+echo 完成：dist_installer\SCTools2安装程序.exe（单文件，双击安装）
 echo 卸载程序 uninstall.exe 由安装程序在安装时生成到安装目录。
 pause
 exit /b 0

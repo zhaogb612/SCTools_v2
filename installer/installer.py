@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SC Tools 安装/卸载程序（单文件双职能）：
+"""SCTools2 安装/卸载程序（单文件双职能）：
 - 安装模式：许可协议 -> 安装位置/附加任务 -> 解压内嵌载荷 -> 快捷方式 + 注册表卸载项 -> 生成 uninstall.exe
 - 卸载模式：参数 --uninstall 或本程序被命名为 uninstall.exe 时触发；删除文件/快捷方式/注册表项
 界面与主程序同风格：无边框、直角、主色标题栏 + 浅色内容区
@@ -17,12 +17,12 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFrame, QHB
                                QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton,
                                QStackedWidget, QTextEdit, QVBoxLayout, QWidget)
 
-APP_NAME = "SC Tools"
+APP_NAME = "SCTools2"
 APP_VER = "3.0"
 EXE_NAME = "SCTools2.exe"
 UNINSTALL_NAME = "uninstall.exe"
 REG_PARENT = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
-REG_KEY = "SCTools"
+REG_KEY = "SCTools2"
 BRAND = "#89C2FF"          # 主色（标题栏），与主程序晴空蓝一致
 BG = "#E6F7FF"             # 辅色（内容区）
 DEFAULT_DIR = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), APP_NAME)
@@ -98,6 +98,41 @@ def kill_running_app():
                    creationflags=0x08000000, capture_output=True)
 
 
+def _payload_span(fpath):
+    """定位 exe 尾部内嵌 zip 的起始偏移，返回 (start, file_size)；找不到返回 None"""
+    import struct
+    size = os.path.getsize(fpath)
+    with open(fpath, "rb") as f:
+        f.seek(max(0, size - (65536 + 22)))
+        tail = f.read()
+    i = tail.rfind(b"PK\x05\x06")          # End of Central Directory
+    if i < 0 or len(tail) - i < 22:
+        return None
+    cd_size, cd_off = struct.unpack("<II", tail[i + 12:i + 20])
+    start = (size - len(tail) + i) - cd_size - cd_off
+    if 0 <= start < size:
+        return start, size
+    return None
+
+
+def make_uninstall(dest):
+    """生成卸载程序：复制安装器 exe 但截掉尾部载荷 zip（卸载用不到，省 ~318MB）。
+    onefile 的 bootloader+CArchive 在载荷之前，截断不影响卸载模式运行。"""
+    span = _payload_span(sys.executable) if getattr(sys, "frozen", False) else None
+    if not span:
+        shutil.copy2(sys.executable, dest)   # 开发环境：payload 在 assets/，exe 本身就不含载荷
+        return
+    start, _total = span
+    with open(sys.executable, "rb") as a, open(dest, "wb") as b:
+        remaining = start
+        while remaining > 0:
+            chunk = a.read(min(1 << 20, remaining))
+            if not chunk:
+                break
+            b.write(chunk)
+            remaining -= len(chunk)
+
+
 def make_shortcut(lnk_path, target, workdir, desc):
     ps = ("$ws = New-Object -ComObject WScript.Shell; "
           "$s = $ws.CreateShortcut('{lnk}'); "
@@ -135,11 +170,13 @@ def _reg_values(install_dir):
 
 
 def write_registry(install_dir):
-    """写 HKLM（安装器带管理员清单，优先全局卸载项，卸载中心必显示）；无权限时回退 HKCU"""
+    """写 HKLM（安装器带管理员清单，优先全局卸载项，卸载中心必显示）；无权限时回退 HKCU。
+    返回实际写入的 hive 名（"HKLM"/"HKCU"），全部失败返回 None"""
     import winreg
     key_path = REG_PARENT + "\\" + REG_KEY
     values = _reg_values(install_dir)
-    for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+    for root, hive in ((winreg.HKEY_LOCAL_MACHINE, "HKLM"),
+                       (winreg.HKEY_CURRENT_USER, "HKCU")):
         try:
             with winreg.CreateKey(root, key_path) as k:
                 for name, val in values:
@@ -147,9 +184,10 @@ def write_registry(install_dir):
                         winreg.SetValueEx(k, name, 0, winreg.REG_DWORD, val)
                     else:
                         winreg.SetValueEx(k, name, 0, winreg.REG_SZ, val)
-            return
+            return hive
         except OSError:
             continue
+    return None
 
 
 def delete_registry():
@@ -175,27 +213,52 @@ def read_install_dir_from_registry():
     return ""
 
 
+def read_installed_version():
+    import winreg
+    for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        try:
+            with winreg.OpenKey(root, REG_PARENT + "\\" + REG_KEY) as k:
+                return winreg.QueryValueEx(k, "DisplayVersion")[0]
+        except OSError:
+            continue
+    return ""
+
+
+def detect_existing_install():
+    """返回 (已安装目录, 已安装版本)；未安装返回 ("", "")"""
+    d = read_install_dir_from_registry()
+    if d and os.path.isfile(os.path.join(d, EXE_NAME)):
+        return os.path.normpath(d), read_installed_version()
+    return "", ""
+
+
 class InstallThread(QThread):
     progress = Signal(int, str)   # 百分比, 当前文件
     done = Signal(bool, str)      # 成功, 消息
 
-    def __init__(self, zip_path, target):
+    def __init__(self, zip_path, target, keep_config=False):
         super().__init__()
         self._zip = zip_path
         self._target = target
+        self._keep_config = keep_config   # 覆盖更新时保留用户配置（tools/nav/skin.json）
 
     def run(self):
         try:
             os.makedirs(self._target, exist_ok=True)
+            skipped = 0
             with zipfile.ZipFile(self._zip) as z:
                 names = z.namelist()
                 total = len(names)
                 for i, name in enumerate(names):
+                    arc = name.replace("\\", "/")
+                    if self._keep_config and arc.startswith("resources/config/"):
+                        skipped += 1   # 不覆盖用户已生成的配置
+                        continue
                     z.extract(name, self._target)
                     if i % 20 == 0:
                         self.progress.emit(int(i * 100 / max(1, total)), name)
                 self.progress.emit(100, "完成")
-            self.done.emit(True, "")
+            self.done.emit(True, "跳过用户配置 {} 项".format(skipped) if skipped else "")
         except Exception as e:
             self.done.emit(False, str(e))
 
@@ -284,6 +347,7 @@ class InstallerWindow(QWidget):
         root.addWidget(self._stack, 1)
         self._install_dir = ""
         self._thread = None
+        self._existing_dir, self._existing_ver = detect_existing_install()
 
         self._build_license_page()
         self._build_option_page()
@@ -344,12 +408,18 @@ class InstallerWindow(QWidget):
         t = QLabel("选择安装位置")
         t.setObjectName("Title")
         v.addWidget(t)
-        d = QLabel("默认安装到系统程序目录 {}（需管理员权限）。卸载时将删除该目录全部文件。".format(DEFAULT_DIR))
-        d.setStyleSheet("color:#5A6772; font-size:11px;")
+        if self._existing_dir:
+            d = QLabel("检测到已安装 {} v{}（{}）。\n将继续以覆盖更新方式安装：程序文件将更新，用户配置（工具/导航/主题设置）保留。"
+                       .format(APP_NAME, self._existing_ver or "?", self._existing_dir))
+            d.setStyleSheet("color:#1B6B34; font-size:11px;")
+            self._dir_edit = QLineEdit(self._existing_dir)
+        else:
+            d = QLabel("默认安装到系统程序目录 {}（需管理员权限）。卸载时将删除该目录全部文件。".format(DEFAULT_DIR))
+            d.setStyleSheet("color:#5A6772; font-size:11px;")
+            self._dir_edit = QLineEdit(DEFAULT_DIR)
         d.setWordWrap(True)
         v.addWidget(d)
         row = QHBoxLayout()
-        self._dir_edit = QLineEdit(DEFAULT_DIR)
         row.addWidget(self._dir_edit, 1)
         browse = QPushButton("浏览...")
         browse.clicked.connect(self._browse)
@@ -398,6 +468,9 @@ class InstallerWindow(QWidget):
         self._final_dir.setWordWrap(True)
         self._final_dir.setStyleSheet("color:#5A6772; font-size:11px;")
         v.addWidget(self._final_dir)
+        self._reg_status = QLabel("")
+        self._reg_status.setWordWrap(True)
+        v.addWidget(self._reg_status)
         self._chk_run = QCheckBox("立即运行 {}".format(APP_NAME))
         self._chk_run.setChecked(True)
         v.addWidget(self._chk_run)
@@ -424,15 +497,19 @@ class InstallerWindow(QWidget):
         if drive and not os.path.exists(drive + "\\"):
             QMessageBox.warning(self, "路径无效", "磁盘 {} 不存在。".format(drive))
             return
-        if os.path.isdir(target) and os.listdir(target):
+        is_update = (self._existing_dir
+                     and os.path.normpath(target).lower() == self._existing_dir.lower())
+        if not is_update and os.path.isdir(target) and os.listdir(target):
             r = QMessageBox.question(
                 self, "目录非空",
                 "目标目录已存在且包含文件，继续安装将覆盖同名文件。\n是否继续？")
             if r != QMessageBox.Yes:
                 return
+        # 覆盖更新：结束正在运行的程序，否则主程序 exe 被占用无法覆盖
+        kill_running_app()
         self._install_dir = target
         self._stack.setCurrentIndex(2)
-        self._thread = InstallThread(payload_path(), target)
+        self._thread = InstallThread(payload_path(), target, keep_config=is_update)
         self._thread.progress.connect(self._on_progress)
         self._thread.done.connect(self._on_done)
         self._thread.start()
@@ -448,12 +525,25 @@ class InstallerWindow(QWidget):
             return
         d = self._install_dir
         exe_path = os.path.join(d, EXE_NAME)
-        # 生成卸载程序 + 注册表
+        # 生成卸载程序 + 注册表（结果明确告知用户，避免静默失败）
+        hive = None
         try:
-            shutil.copy2(sys.executable, os.path.join(d, UNINSTALL_NAME))
-            write_registry(d)
+            make_uninstall(os.path.join(d, UNINSTALL_NAME))
         except OSError as e:
-            QMessageBox.warning(self, "警告", "注册表/卸载程序写入失败：\n" + str(e))
+            QMessageBox.warning(self, "警告", "卸载程序写入失败：\n" + str(e))
+        try:
+            hive = write_registry(d)
+        except Exception as e:
+            QMessageBox.warning(self, "警告", "注册表写入失败：\n" + str(e))
+        if hive == "HKLM":
+            self._reg_status.setText("已注册系统级卸载信息（HKLM），可在「设置-应用」和卸载工具中看到本程序。")
+            self._reg_status.setStyleSheet("color:#1B6B34; font-size:11px;")
+        elif hive == "HKCU":
+            self._reg_status.setText("已注册当前用户卸载信息（HKCU）。如需所有用户可见，请以管理员身份重新安装。")
+            self._reg_status.setStyleSheet("color:#8A4B00; font-size:11px;")
+        else:
+            self._reg_status.setText("警告：卸载信息注册失败，控制面板不会显示卸载项！")
+            self._reg_status.setStyleSheet("color:#B02020; font-size:11px; font-weight:bold;")
         # 快捷方式
         if self._chk_desktop.isChecked():
             make_shortcut(os.path.join(desktop_dir(), APP_NAME + ".lnk"),
@@ -702,6 +792,42 @@ def run_uninstall():
     sys.exit(app.exec())
 
 
+def run_silent():
+    """静默安装/覆盖更新（--silent 或 /S）：无界面，自动定位已装目录，
+    结束运行中的程序、保留用户配置，完成后启动新版本。供自动更新链调用。
+    退出码：0 成功 / 1 解压等 IO 失败 / 2 卸载信息注册失败"""
+    target = read_install_dir_from_registry()
+    if not target or not os.path.isfile(os.path.join(target, EXE_NAME)):
+        target = DEFAULT_DIR
+    target = os.path.normpath(target)
+    try:
+        kill_running_app()
+        os.makedirs(target, exist_ok=True)
+        keep = os.path.isfile(os.path.join(target, "resources", "config", "tools.json"))
+        with zipfile.ZipFile(payload_path()) as z:
+            for name in z.namelist():
+                if keep and name.replace("\\", "/").startswith("resources/config/"):
+                    continue
+                z.extract(name, target)
+        make_uninstall(os.path.join(target, UNINSTALL_NAME))
+    except Exception:
+        sys.exit(1)
+    hive = write_registry(target)
+    exe_path = os.path.join(target, EXE_NAME)
+    if os.path.isdir(desktop_dir()):
+        make_shortcut(os.path.join(desktop_dir(), APP_NAME + ".lnk"),
+                      exe_path, target, APP_NAME)
+    os.makedirs(START_MENU_DIR, exist_ok=True)
+    make_shortcut(os.path.join(START_MENU_DIR, APP_NAME + ".lnk"),
+                  exe_path, target, APP_NAME)
+    make_shortcut(os.path.join(START_MENU_DIR, "卸载 " + APP_NAME + ".lnk"),
+                  os.path.join(target, UNINSTALL_NAME), target, "卸载 " + APP_NAME)
+    time.sleep(0.5)
+    if os.path.isfile(exe_path):
+        subprocess.Popen([exe_path], cwd=target)
+    sys.exit(0 if hive else 2)
+
+
 def main():
     argv = [a for a in sys.argv[1:]]
     is_uninstall = "--uninstall" in argv or \
@@ -709,6 +835,9 @@ def main():
         == UNINSTALL_NAME
     if is_uninstall:
         run_uninstall()
+        return
+    if "--silent" in argv or "/S" in argv or "/s" in argv:
+        run_silent()
         return
     app = QApplication(sys.argv)
     app.setStyleSheet(QSS)
