@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFrame, QHB
                                QStackedWidget, QTextEdit, QVBoxLayout, QWidget)
 
 APP_NAME = "SCTools2"
-APP_VER = "3.0"
+APP_VER = "3.1"
 EXE_NAME = "SCTools2.exe"
 UNINSTALL_NAME = "uninstall.exe"
 REG_PARENT = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
@@ -28,6 +28,19 @@ BG = "#E6F7FF"             # 辅色（内容区）
 DEFAULT_DIR = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), APP_NAME)
 START_MENU_DIR = os.path.join(os.environ["APPDATA"],
                               r"Microsoft\Windows\Start Menu\Programs", APP_NAME)
+
+
+def resolve_install_target(path):
+    """把用户选定的目录规范化为真正的安装目录：自动在其下创建 APP_NAME 子目录。
+
+    选中 C:\\Software 装到 C:\\Software\\SCTools2，避免程序文件直接铺进所选目录
+    （否则卸载会清空该目录原有文件）。若所选目录本身已是 SCTools2（覆盖更新、
+    或用户已选到程序目录）则原样返回，不会套成 SCTools2\\SCTools2。
+    """
+    p = os.path.normpath(os.path.abspath(path.strip()))
+    if os.path.basename(p).lower() == APP_NAME.lower():
+        return p
+    return os.path.join(p, APP_NAME)
 
 FONT = '"Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
 
@@ -414,7 +427,8 @@ class InstallerWindow(QWidget):
             d.setStyleSheet("color:#1B6B34; font-size:11px;")
             self._dir_edit = QLineEdit(self._existing_dir)
         else:
-            d = QLabel("默认安装到系统程序目录 {}（需管理员权限）。卸载时将删除该目录全部文件。".format(DEFAULT_DIR))
+            d = QLabel("默认安装到系统程序目录 {}（需管理员权限）。\n选择其他位置时，将自动在其下创建 {} 文件夹。"
+                       "卸载时将删除该目录全部文件。".format(DEFAULT_DIR, APP_NAME))
             d.setStyleSheet("color:#5A6772; font-size:11px;")
             self._dir_edit = QLineEdit(DEFAULT_DIR)
         d.setWordWrap(True)
@@ -486,13 +500,17 @@ class InstallerWindow(QWidget):
     def _browse(self):
         d = QFileDialog.getExistingDirectory(self, "选择安装位置", self._dir_edit.text())
         if d:
-            self._dir_edit.setText(os.path.normpath(d))
+            # 选中父目录时自动补一层 APP_NAME 子目录，安装时再自动创建该文件夹
+            self._dir_edit.setText(resolve_install_target(d))
 
     def _start_install(self):
-        target = os.path.normpath(self._dir_edit.text().strip())
-        if not target or target.lower() in ("c:\\", "d:\\"):
+        raw = self._dir_edit.text().strip()
+        if not raw:
             QMessageBox.warning(self, "无效路径", "请选择一个具体的安装目录。")
             return
+        # 手输路径同样规范化，保证始终装在独立的 APP_NAME 目录下
+        target = resolve_install_target(raw)
+        self._dir_edit.setText(target)
         drive = os.path.splitdrive(target)[0]
         if drive and not os.path.exists(drive + "\\"):
             QMessageBox.warning(self, "路径无效", "磁盘 {} 不存在。".format(drive))

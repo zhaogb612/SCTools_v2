@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-APP_VER = "3.0"   # 与 GitHub Release tag 对应（tag 形如 v3.1 时此处写 "3.1"）
+APP_VER = "3.1"   # 与 GitHub Release tag 对应（tag 形如 v3.1 时此处写 "3.1"）
 
 def _base_dir():
     if getattr(sys, "frozen", False):

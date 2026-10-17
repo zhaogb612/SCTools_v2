@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsBlurEffect,
                                QGraphicsScene, QHBoxLayout, QLineEdit,
                                QListWidget, QListWidgetItem, QMainWindow,
-                               QStackedWidget, QVBoxLayout, QWidget)
+                               QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
 from app.core import config
 from app.core.app_manager import AppManager
@@ -157,7 +157,9 @@ class MainWindow(QMainWindow):
     def eventFilter(self, obj, event):
         # 应用级过滤器：本窗口边缘 6px 内按下即开始系统级缩放
         et = event.type()
-        if et == event.Type.MouseButtonPress and not self.isMaximized() and self.isActiveWindow():
+        # 落点在按钮上时跳过边缘判定：标题栏控制键贴齐右上角，避免点击被缩放热区吞掉
+        if (et == event.Type.MouseButtonPress and not self.isMaximized()
+                and self.isActiveWindow() and not isinstance(obj, QPushButton)):
             edges = self._edge_at(event.globalPosition().toPoint())
             if edges:
                 self.windowHandle().startSystemResize(edges)

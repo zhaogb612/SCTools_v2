@@ -116,7 +116,10 @@ class SplashWindow(QWidget):
             self._movie.start()
 
     def finish(self):
-        """主窗口就绪后调用：停止播放并关闭"""
+        """主窗口就绪后调用：停止播放并关闭（可重复调用，避免兜底定时器重复触发）"""
+        if getattr(self, "_done", False):
+            return
+        self._done = True
         if self._movie is not None:
             self._movie.stop()
             self._movie = None

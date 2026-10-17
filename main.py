@@ -5,7 +5,6 @@ import os
 import sys
 import time
 
-from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -30,13 +29,12 @@ def main():
 
     icons.ensure_icon_files()
 
-    # 启动图：MainWindow 构建期间展示，主窗口就绪后保底停留 3s 再关闭
+    # 启动图：MainWindow 构建期间展示，主窗口首帧绘出后立即撤下
     from app.core import config
     from app.core.theme import DEFAULT_SKIN
     app.setApplicationVersion(config.APP_VER)
     from app.ui.splash import SplashWindow, resolve_path
     splash = None
-    t0 = time.monotonic()
     skin = config.load_json("skin.json", dict(DEFAULT_SKIN))
     sp = resolve_path(skin)
     if sp:
@@ -51,9 +49,9 @@ def main():
 
     win = MainWindow()
     win.show()
+    app.processEvents()
     if splash is not None:
-        remain = int(3000 - (time.monotonic() - t0) * 1000)
-        QTimer.singleShot(max(0, remain), splash.finish)
+        splash.finish()
     sys.exit(app.exec_())
 
 
