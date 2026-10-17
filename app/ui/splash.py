@@ -41,6 +41,13 @@ def list_images():
     return pool
 
 
+def user_images():
+    """用户自添加的启动图（不含随包默认图），供设置页管理与删除"""
+    d = user_dir()
+    return [os.path.join(d, f) for f in sorted(os.listdir(d))
+            if f.lower().endswith(IMAGE_EXTS)]
+
+
 def resolve_path(skin):
     """按设置返回本次启动要显示的图路径；关闭返回 None；自定义文件缺失回退随机"""
     mode = skin.get("splash_mode", "random")

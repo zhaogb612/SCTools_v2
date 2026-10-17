@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """设置页面：配色方案（预设 + 自定义主题）、日/夜模式、标题栏、全局热键、
-应用卡片图标开关、自定义背景图（含模糊度）、面板不透明度、配置导入导出与检查更新"""
+应用卡片图标开关、启动图（模式/尺寸/自添加图管理）、自定义背景图（含模糊度）、
+面板不透明度、缓存清理、配置导入导出与检查更新"""
 import os
 import re
 import tempfile
 
 from PySide6.QtCore import Qt, QUrl, QTimer, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QKeySequence, QLinearGradient, QPainter
+from PySide6.QtGui import (QColor, QDesktopServices, QKeySequence, QLinearGradient,
+                           QPainter, QPixmap)
 from PySide6.QtWidgets import (QButtonGroup, QFileDialog, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QLineEdit, QProgressBar,
                                QPushButton, QScrollArea, QSlider, QTextEdit,
@@ -594,6 +596,72 @@ class AutoHideScroll(QScrollArea):
         self._timer.start(1200)
 
 
+class SplashPoolDialog(AppDialog):
+    """管理自添加的启动图：列出用户目录内的图片并逐张删除（随包默认图不可删）"""
+
+    def __init__(self, parent, on_change=None):
+        super().__init__(parent, "管理启动图")
+        self._on_change = on_change
+        lay = self.content_layout()
+        tip = QLabel("自添加的启动图保存在 %LOCALAPPDATA%\\SCTools\\splash，"
+                     "删除后不再参与随机与自定义启动。")
+        tip.setObjectName("Sub")
+        tip.setWordWrap(True)
+        lay.addWidget(tip)
+        self._host = QWidget()
+        self._host_lay = QVBoxLayout(self._host)
+        self._host_lay.setContentsMargins(0, 0, 0, 0)
+        self._host_lay.setSpacing(6)
+        lay.addWidget(self._host)
+        self._rebuild()
+
+    def _rebuild(self):
+        while self._host_lay.count():
+            item = self._host_lay.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        from app.ui.splash import user_images
+        files = user_images()
+        if not files:
+            empty = QLabel("暂无自添加的启动图。")
+            empty.setObjectName("Sub")
+            self._host_lay.addWidget(empty)
+        for p in files:
+            row = QWidget()
+            h = QHBoxLayout(row)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(10)
+            thumb = QLabel()
+            thumb.setFixedSize(76, 46)
+            pm = QPixmap(p)
+            if not pm.isNull():
+                thumb.setPixmap(pm.scaled(thumb.size(), Qt.KeepAspectRatio,
+                                          Qt.SmoothTransformation))
+            h.addWidget(thumb)
+            name = QLabel(os.path.basename(p))
+            h.addWidget(name, 1)
+            btn = QPushButton("删除")
+            btn.setObjectName("Ghost")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda _=False, f=p: self._delete(f))
+            h.addWidget(btn)
+            self._host_lay.addWidget(row)
+
+    def _delete(self, path):
+        if not AppMessageBox.question(self, "删除启动图",
+                                      "确定删除「{}」？".format(os.path.basename(path))):
+            return
+        try:
+            os.remove(path)
+        except OSError as e:
+            AppMessageBox.warning(self, "删除失败", str(e))
+            return
+        self._rebuild()
+        if self._on_change:
+            self._on_change()
+
+
 class SettingsPage(QWidget):
     def __init__(self, parent_window):
         super().__init__()
@@ -768,6 +836,12 @@ class SettingsPage(QWidget):
         self.btn_sp_add.setCursor(Qt.PointingHandCursor)
         self.btn_sp_add.clicked.connect(self._pick_splash)
         sp_row.addWidget(self.btn_sp_add)
+        self.btn_sp_manage = QPushButton("管理图片")
+        self.btn_sp_manage.setObjectName("Ghost")
+        self.btn_sp_manage.setCursor(Qt.PointingHandCursor)
+        self.btn_sp_manage.setToolTip("查看并删除自添加的启动图")
+        self.btn_sp_manage.clicked.connect(self._manage_splash)
+        sp_row.addWidget(self.btn_sp_manage)
         v1.addLayout(sp_row)
         self._refresh_splash_row()
         root.addWidget(sec1)
@@ -872,6 +946,19 @@ class SettingsPage(QWidget):
         self.btn_reset.clicked.connect(self._reset_config)
         cfg_row.addWidget(self.btn_reset)
         v4.addLayout(cfg_row)
+        cache_row = QHBoxLayout()
+        cache_row.setSpacing(8)
+        ctip = QLabel("缓存：程序图标与网页图标的提取结果保存在 %LOCALAPPDATA%\\SCTools\\icon_cache，"
+                      "可随时清理（配置与自添加启动图不受影响）。")
+        ctip.setObjectName("Sub")
+        ctip.setWordWrap(True)
+        cache_row.addWidget(ctip, 1)
+        self.btn_cache = QPushButton("清除缓存")
+        self.btn_cache.setObjectName("Ghost")
+        self.btn_cache.setCursor(Qt.PointingHandCursor)
+        self.btn_cache.clicked.connect(self._clear_cache)
+        cache_row.addWidget(self.btn_cache)
+        v4.addLayout(cache_row)
         root.addWidget(sec4)
 
         root.addStretch()
@@ -1033,12 +1120,13 @@ class SettingsPage(QWidget):
         self.sl_splash.setValue(int(self._win.skin.get("splash_ratio", 40)))
         self.sl_splash.blockSignals(False)
         self.lbl_sp_ratio.setText("{}%".format(self.sl_splash.value()))
-        from app.ui.splash import list_images
+        from app.ui.splash import list_images, user_images
         custom = self._win.skin.get("splash_custom", "")
         if mode == "custom" and custom:
             self.lbl_splash.setText("当前：" + os.path.basename(custom))
         else:
-            self.lbl_splash.setText("图池 {} 张（默认 + 自添加）".format(len(list_images())))
+            self.lbl_splash.setText("图池 {} 张（默认 + 自添加 {}）".format(
+                len(list_images()), len(user_images())))
 
     def _on_hotkey_captured(self, combo):
         self._win.skin["hotkey_label"] = combo
@@ -1102,6 +1190,37 @@ class SettingsPage(QWidget):
             return
         # reload_config 会重建本页，延后一拍避免在当前槽内销毁自身
         QTimer.singleShot(0, self._win.reload_config)
+
+    # -- 缓存与启动图管理 -----------------------------------------------------
+    def _clear_cache(self):
+        """清空本机图标缓存目录（程序图标 + 网站 favicon 提取结果，均为可再生缓存）"""
+        from app.core import favicon, file_icon
+        removed = 0
+        for d in {file_icon.CACHE_DIR, favicon.CACHE_DIR}:
+            if not os.path.isdir(d):
+                continue
+            for f in os.listdir(d):
+                p = os.path.join(d, f)
+                try:
+                    if os.path.isfile(p):
+                        os.remove(p)
+                        removed += 1
+                except OSError:
+                    pass
+        AppMessageBox.info(self, "清除缓存",
+                           "已清理 {} 个缓存文件，图标会在下次启动时重新生成。".format(removed))
+
+    def _manage_splash(self):
+        SplashPoolDialog(self, on_change=self._after_splash_delete).exec()
+
+    def _after_splash_delete(self):
+        """删除自添加启动图后刷新：当前自定义图已被删则回退随机模式"""
+        cur = self._win.skin.get("splash_custom", "")
+        if cur and not os.path.isfile(cur):
+            self._win.skin["splash_mode"] = "random"
+            self._win.skin["splash_custom"] = ""
+            self._win.apply_theme()
+        self._refresh_splash_row()
 
     # -- 检查更新 -------------------------------------------------------------
     def _check_update(self):
