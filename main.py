@@ -40,20 +40,23 @@ def main():
     skin = config.load_json("skin.json", dict(DEFAULT_SKIN))
 
     win = MainWindow()
+    sp = resolve_path(skin)
+    overlay = None
+    if sp or skin.get("splash_mode") != "off":
+        overlay = LoadingOverlay(win, sp, skin)
+    # 白色覆盖层先于主窗口 show()：首帧绘制即包含白底，
+    # 从启动到淡出整个过程中应用内容都不外露（消除“先闪一下界面再跳白底”）
+    if overlay is not None:
+        overlay.show()
     win.show()
-    # 保证首帧真正绘制出来，再叠加加载覆盖层
+    if overlay is not None:
+        overlay.raise_()
+        overlay.start()
+    # 保证首帧真正绘制出来之后，加载覆盖层已就位
     for _ in range(6):
         app.processEvents()
         time.sleep(0.02)
     app.processEvents()
-
-    overlay = None
-    sp = resolve_path(skin)
-    if sp or skin.get("splash_mode") != "off":
-        overlay = LoadingOverlay(win, sp, skin)
-        overlay.show()
-        overlay.start()
-        app.processEvents()
 
     def _finish_overlay():
         if overlay is not None:

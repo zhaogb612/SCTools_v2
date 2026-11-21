@@ -1158,6 +1158,47 @@ class SettingsPage(QWidget):
         vw.addLayout(we_row)
         root.addWidget(sec_w)
 
+        # 配置与维护：导出/导入配置、恢复默认配置、清除缓存
+        sec_m = QFrame()
+        sec_m.setObjectName("Section")
+        vm = QVBoxLayout(sec_m)
+        vm.setContentsMargins(16, 14, 16, 14)
+        vm.setSpacing(10)
+        lm = QLabel("配置与维护（配置恢复默认/导入导出会重建设置页）")
+        lm.setObjectName("GroupTitle")
+        vm.addWidget(lm)
+        m_row1 = QHBoxLayout()
+        m_row1.setSpacing(8)
+        self.btn_export = QPushButton("导出配置")
+        self.btn_import = QPushButton("导入配置")
+        self.btn_reset_cfg = QPushButton("恢复默认配置")
+        for b in (self.btn_export, self.btn_import, self.btn_reset_cfg):
+            b.setObjectName("Ghost")
+            b.setCursor(Qt.PointingHandCursor)
+        self.btn_export.clicked.connect(self._export_config)
+        self.btn_import.clicked.connect(self._import_config)
+        self.btn_reset_cfg.clicked.connect(self._reset_config)
+        m_row1.addWidget(self.btn_export)
+        m_row1.addWidget(self.btn_import)
+        m_row1.addWidget(self.btn_reset_cfg)
+        m_row1.addStretch()
+        vm.addLayout(m_row1)
+        m_row2 = QHBoxLayout()
+        m_row2.setSpacing(8)
+        self.btn_clear_cache = QPushButton("清除缓存")
+        self.btn_clear_cache.setObjectName("Ghost")
+        self.btn_clear_cache.setCursor(Qt.PointingHandCursor)
+        self.btn_clear_cache.setToolTip(
+            "清理程序/网站图标缓存（%LOCALAPPDATA%\\SCTools），下次启动重新生成")
+        self.btn_clear_cache.clicked.connect(self._clear_cache)
+        cache_tip = QLabel("图标缓存目录：%LOCALAPPDATA%\\SCTools（配置与自添加启动图不受影响）")
+        cache_tip.setObjectName("Sub")
+        cache_tip.setWordWrap(True)
+        m_row2.addWidget(self.btn_clear_cache)
+        m_row2.addWidget(cache_tip, 1)
+        vm.addLayout(m_row2)
+        root.addWidget(sec_m)
+
         root.addStretch()
         self.select_scheme(skin.get("scheme", "晴空蓝"), apply=False)
         mode = skin.get("mode", "day")
@@ -1426,3 +1467,78 @@ class SettingsPage(QWidget):
         self.op_label.setText("{}%".format(v))
         self._win.skin["opacity"] = v
         self._win.apply_theme()
+
+    # -- 配置与维护 ---------------------------------------------------------
+    def _export_config(self):
+        import zipfile
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出配置", os.path.join(os.path.expanduser("~"), "Desktop", "sctools_config.zip"),
+            "配置包 (*.zip)")
+        if not path:
+            return
+        try:
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+                for name in ("tools.json", "skin.json", "nav.json"):
+                    p = config.config_path(name)
+                    if os.path.exists(p):
+                        z.write(p, name)
+            AppMessageBox.info(self, "导出成功", "配置已导出到：\n" + path)
+        except OSError as e:
+            AppMessageBox.warning(self, "导出失败", str(e))
+
+    def _import_config(self):
+        import zipfile
+        path, _ = QFileDialog.getOpenFileName(self, "导入配置", "", "配置包 (*.zip)")
+        if not path:
+            return
+        if not AppMessageBox.question(self, "导入配置",
+                                      "导入将覆盖当前应用清单、皮肤与导航配置，确定继续？"):
+            return
+        try:
+            with zipfile.ZipFile(path) as z:
+                for name in ("tools.json", "skin.json", "nav.json"):
+                    if name in z.namelist():
+                        z.extract(name, config.config_dir())
+        except (OSError, zipfile.BadZipFile) as e:
+            AppMessageBox.warning(self, "导入失败", str(e))
+            return
+        self._win.reload_config()
+        AppMessageBox.info(self, "导入成功", "配置已应用。")
+
+    def _reset_config(self):
+        """配置恢复出厂默认（重写默认配置文件并整体重载界面）"""
+        if not AppMessageBox.question(self, "恢复默认配置",
+                                      "将重置应用清单、皮肤与导航为出厂默认，\n"
+                                      "自定义主题与收藏也会清空，确定继续？"):
+            return
+        from app.core.app_manager import DEFAULT_CATEGORIES, DEFAULT_TOOLS
+        from app.core.nav_manager import DEFAULT_NAV
+        from app.core.theme import DEFAULT_SKIN
+        try:
+            config.save_json("tools.json", {"categories": list(DEFAULT_CATEGORIES),
+                                            "tools": [dict(t) for t in DEFAULT_TOOLS]})
+            config.save_json("nav.json", {"items": [dict(it) for it in DEFAULT_NAV]})
+            config.save_json("skin.json", dict(DEFAULT_SKIN))
+        except OSError as e:
+            AppMessageBox.warning(self, "重置失败", str(e))
+            return
+        # reload_config 会重建本页，延后一拍避免在当前槽内销毁自身
+        QTimer.singleShot(0, self._win.reload_config)
+
+    def _clear_cache(self):
+        """清空本机图标缓存目录（程序图标 + 网站 favicon 提取结果，均为可再生缓存）"""
+        from app.core import favicon, file_icon
+        removed = 0
+        for d in {file_icon.CACHE_DIR, favicon.CACHE_DIR}:
+            if not os.path.isdir(d):
+                continue
+            for f in os.listdir(d):
+                p = os.path.join(d, f)
+                try:
+                    if os.path.isfile(p):
+                        os.remove(p)
+                        removed += 1
+                except OSError:
+                    pass
+        AppMessageBox.info(self, "清除缓存",
+                           "已清理 {} 个缓存文件，图标会在下次启动时重新生成。".format(removed))
