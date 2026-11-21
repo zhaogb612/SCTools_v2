@@ -171,25 +171,7 @@ SCTools2/
 
 ## 更新日志
 
-### v3.1
-
-- 设置页新增「清除缓存」，清理程序图标与网页图标的提取缓存
-- 「恢复默认配置」的出厂工具清单与随包配置对齐
-- 标题栏系统样式按钮贴合原生观感；修复最大化后还原需点击两次的问题
-- 安装程序在所选目录下自动创建 `SCTools2` 子目录，避免程序文件铺满所选目录
-- 更新检测放宽安装包资产匹配，兼容中文资产名被截断的情况
-
-### v3.0
-
-- PySide6 重构版首发：工具箱 / 网站导航 / 配置检测 / 设置与皮肤四大模块
-
-- 双色主题体系、日夜模式、背景图与自定义透明度
-
-- 全局呼出热键行内录制、GitHub Releases 自动更新、配置导入导出
-
-- 屏幕坏点漏光检测、启动图、应用真实图标提取
-
-> 各版本完整更新日志见 [CHANGELOG.md](CHANGELOG.md)，同步发布在 [GitHub Releases](https://github.com/zhaogb612/SCTools_v2/releases)。
+各版本完整更新日志见 [CHANGELOG.md](CHANGELOG.md)，同步发布在 [GitHub Releases](https://github.com/zhaogb612/SCTools_v2/releases)。
 
 ***
 
