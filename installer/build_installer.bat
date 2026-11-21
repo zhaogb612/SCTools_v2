@@ -1,33 +1,41 @@
 @echo off
-chcp 65001 >nul
 setlocal
 cd /d "%~dp0.."
 
-echo [1/4] æ£€æŸ¥ä¸»ç¨‹åºäº§ç‰© dist\SCTools2...
+echo ============================================
+echo  SCTools2 °²×°³ÌÐò¹¹½¨
+echo ============================================
+
+echo [1/4] ¼ì²éÖ÷³ÌÐò²úÎï dist\SCTools2...
 if not exist "dist\SCTools2\SCTools2.exe" (
-    echo æœªæ‰¾åˆ°ä¸»ç¨‹åºï¼Œè¯·å…ˆè¿è¡Œ build.bat æ‰“åŒ…ä¸»ç¨‹åºã€‚
+    echo Î´ÕÒµ½Ö÷³ÌÐò£¬ÇëÏÈÔËÐÐ build.bat ´ò°üÖ÷³ÌÐò¡£
     pause & exit /b 1
 )
 
-echo [2/4] ç”Ÿæˆè½½è· payload.zipï¼ˆåŽ‹ç¼© dist\SCTools2ï¼‰...
-"C:\Users\Z1321\AppData\Local\Programs\Python\Python313\python.exe" installer\make_payload.py || goto :err
+echo [2/4] Éú³ÉÔØºÉ payload.zip£¨Ñ¹Ëõ dist\SCTools2£©...
+"C:\Users\Z1321\AppData\Local\Programs\Python\Python313\python.exe" installer\make_payload.py
+if errorlevel 1 goto :err
 
-echo [3/4] ç¼–è¯‘å®‰è£…ç¨‹åºï¼ˆonefileï¼‰...
+echo [3/4] ±àÒë°²×°³ÌÐò£¨onefile£©...
 cd installer
-"C:\Users\Z1321\AppData\Local\Programs\Python\Python313\python.exe" -m PyInstaller --clean --noconfirm installer.spec || goto :err
+"C:\Users\Z1321\AppData\Local\Programs\Python\Python313\python.exe" -m PyInstaller --clean --noconfirm installer.spec
+if errorlevel 1 goto :err
 cd ..
 
-echo [4/4] æ‹¼æŽ¥è½½è·åˆ°å®‰è£…å™¨å°¾éƒ¨ï¼Œè¾“å‡ºå•æ–‡ä»¶å®‰è£…åŒ…...
-if exist "dist_installer\SCTools2å®‰è£…ç¨‹åº.exe" del /q "dist_installer\SCTools2å®‰è£…ç¨‹åº.exe"
-copy /b "installer\dist\SC_Tools_Setup_tmp.exe" + "installer\assets\payload.zip" "dist_installer\SCTools2å®‰è£…ç¨‹åº.exe" >nul || goto :err
+echo [4/4] Æ´½ÓÔØºÉµ½°²×°Æ÷Î²²¿£¬Êä³öµ¥ÎÄ¼þ°²×°°ü...
+if not exist dist_installer mkdir dist_installer
+if exist "dist_installer\SCTools2°²×°³ÌÐò.exe" del /q "dist_installer\SCTools2°²×°³ÌÐò.exe"
+copy /b "installer\dist\SC_Tools_Setup_tmp.exe" + "installer\assets\payload.zip" "dist_installer\SCTools2°²×°³ÌÐò.exe" >nul
+if errorlevel 1 goto :err
 
 echo.
-echo å®Œæˆï¼šdist_installer\SCTools2å®‰è£…ç¨‹åº.exeï¼ˆå•æ–‡ä»¶ï¼ŒåŒå‡»å®‰è£…ï¼‰
-echo å¸è½½ç¨‹åº uninstall.exe ç”±å®‰è£…ç¨‹åºåœ¨å®‰è£…æ—¶ç”Ÿæˆåˆ°å®‰è£…ç›®å½•ã€‚
+echo Íê³É£ºdist_installer\SCTools2°²×°³ÌÐò.exe£¨µ¥ÎÄ¼þ£¬Ë«»÷°²×°£©
+echo Ð¶ÔØ³ÌÐò uninstall.exe ÓÉ°²×°³ÌÐòÔÚ°²×°Ê±Éú³Éµ½°²×°Ä¿Â¼¡£
 pause
 exit /b 0
 
 :err
-echo å®‰è£…ç¨‹åºæž„å»ºå¤±è´¥ã€‚
+echo.
+echo °²×°³ÌÐò¹¹½¨Ê§°Ü¡£
 pause
 exit /b 1

@@ -30,37 +30,40 @@ def main():
 
     icons.ensure_icon_files()
 
-    # 启动图：MainWindow 构建期间展示；就绪即撤下，但保证至少可见 MIN_SPLASH_MS，
-    # 避免启动过快时启动图一闪而过（等于没显示）
+    # 启动加载：主窗口先行，加载覆盖层（启动图 + “正在加载中…”）在窗口内展示。
+    # 主窗口就绪即淡出，但保证至少可见 MIN_SPLASH_MS，避免一闪而过
     MIN_SPLASH_MS = 1500
     from app.core import config
     from app.core.theme import DEFAULT_SKIN
     app.setApplicationVersion(config.APP_VER)
-    from app.ui.splash import SplashWindow, resolve_path
-    splash = None
-    t0 = time.monotonic()
+    from app.ui.splash import LoadingOverlay, resolve_path
     skin = config.load_json("skin.json", dict(DEFAULT_SKIN))
-    sp = resolve_path(skin)
-    if sp:
-        splash = SplashWindow(sp, skin)
-        splash.show()
-        splash.start()  # 启动 GIF 播放
-        # 多轮 processEvents 确保首帧真正绘制出来，再进入耗时初始化
-        for _ in range(6):
-            app.processEvents()
-            time.sleep(0.02)
-        app.processEvents()
 
     win = MainWindow()
     win.show()
+    # 保证首帧真正绘制出来，再叠加加载覆盖层
+    for _ in range(6):
+        app.processEvents()
+        time.sleep(0.02)
     app.processEvents()
-    if splash is not None:
-        # 剩余可见时长：主窗口就绪得早则补足最短时长后再撤下，就绪得晚则立刻撤下
-        remain = int(MIN_SPLASH_MS - (time.monotonic() - t0) * 1000)
-        if remain > 0:
-            QTimer.singleShot(remain, splash.finish)
-        else:
-            splash.finish()
+
+    overlay = None
+    sp = resolve_path(skin)
+    if sp or skin.get("splash_mode") != "off":
+        overlay = LoadingOverlay(win, sp, skin)
+        overlay.show()
+        overlay.start()
+        app.processEvents()
+
+    t0 = time.monotonic()
+
+    def _finish_overlay():
+        if overlay is not None:
+            overlay.finish()
+
+    if overlay is not None:
+        # 至少展示 MIN_SPLASH_MS 后淡出
+        QTimer.singleShot(MIN_SPLASH_MS, _finish_overlay)
     sys.exit(app.exec_())
 
 

@@ -3,7 +3,6 @@
   白天：标题栏 = 主色；侧边栏/内容区背景 = 辅色（向主色轻染保证可辨识）；卡片白色；输入控件取辅色加深
   夜间：全局深色底；标题栏 = 主色加深；交互色 = 主色提亮
 文字颜色按背景亮度自适应。含中文字体回退链"""
-from app.core import config
 
 # 中文字体回退链
 FONT_STACK = '"Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "SimHei", sans-serif'
@@ -53,7 +52,15 @@ DEFAULT_SKIN = {"scheme": "晴空蓝", "mode": "day", "bg_image": "", "opacity":
                 "custom_brand": "", "custom_bg": "", "custom_themes": [],
                 "titlebar_style": "mac", "show_tool_icons": True,
                 "splash_mode": "random", "splash_custom": "",
-                "splash_ratio": 40}
+                "splash_ratio": 40, "window_effect": "none"}
+
+
+def on_brand_for(hexc):
+    """按背景色亮度挑选前景色：亮底用深色、暗底用白色（与 palette 的 on_brand 规则一致）"""
+    try:
+        return "#2E2A20" if _lum(hexc) > 0.62 else "#FFFFFF"
+    except Exception:
+        return "#FFFFFF"
 
 
 def _lum(hexc):
@@ -266,7 +273,7 @@ QFrame#DlgBar QLabel {{ background: transparent; color: {on_brand}; }}
 QLabel#DlgTitle {{ font-size: 13px; font-weight: bold; }}
 QPushButton#DlgClose {{
     background: transparent; border: none; border-radius: 0;
-    image: url({close_icon});
+    padding: 1px;
 }}
 QPushButton#DlgClose:hover {{ background: {sidebar_selected_bg}; }}
 QFrame#DlgBody {{ background: {bg}; }}
@@ -275,6 +282,17 @@ QLineEdit, QComboBox, QSpinBox {{
     padding: 5px 8px; color: {text}; border-radius: 0; font-size: 12px;
 }}
 QLineEdit:focus, QComboBox:focus {{ border-color: {accent}; }}
+QTextEdit, QPlainTextEdit {{
+    background: {card}; border: 1px solid {border}; color: {text};
+    padding: 6px; border-radius: 0; font-size: 12px;
+    selection-background-color: {selected}; selection-color: {accent};
+}}
+QProgressBar {{
+    background: {card}; border: 1px solid {border}; height: 16px;
+    text-align: center; color: {text}; font-size: 11px; border-radius: 0;
+}}
+QProgressBar::chunk {{ background: {accent}; }}
+QRadioButton {{ color: {text}; font-size: 12px; spacing: 6px; }}
 QComboBox QAbstractItemView {{
     background: {card}; color: {text};
     selection-background-color: {selected}; selection-color: {accent};
@@ -299,5 +317,4 @@ QFrame#Section {{ background: {card}; border: 1px solid {border}; }}
         panel2=s(p["panel2"]), card=s(p["panel"]),
         text=p["text"], sub=p["sub"], accent=p["accent"], accent_hover=p["accent_hover"],
         border=p["border"], hover=s(p["hover"]), selected=s(p["selected"]),
-        close_icon=config.ICON_DIR.replace("\\", "/") + "/close.svg",
     )

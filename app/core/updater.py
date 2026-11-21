@@ -1,17 +1,32 @@
 # -*- coding: utf-8 -*-
 """自动更新：GitHub Releases 检查新版本 + 下载资产。
-REPO 为 GitHub 仓库 owner/name；Release 资产上传安装包 exe（名字含"安装"或"Setup"优先，其余 exe 回退匹配）。"""
+资产分两类——安装版（.exe，交给安装器静默覆盖）与绿色版（.zip，解压覆盖当前目录）；
+下载默认多连接 Range 分块加速，服务端不支持分块时自动回退单连接流式下载。"""
 import json
+import os
+import sys
+import threading
 import urllib.request
 
 from PySide6.QtCore import QThread, Signal
 
 from app.core import config
 
-REPO = "zhaogb612/SCTools_v2"   # GitHub 仓库 owner/name，与 Release tag（形如 v3.0）对应
+REPO = "zhaogb612/SCTools_v2"   # GitHub 仓库 owner/name，与 Release tag（形如 v3.2）对应
 API = "https://api.github.com/repos/{}/releases/latest".format(REPO)
 RELEASES_PAGE = "https://github.com/{}/releases/latest".format(REPO)
 _UA = {"User-Agent": "SC-Tools-Updater"}
+
+CONNS = 6             # 分块下载连接数
+_CHUNK = 1 << 18      # 单连接读取块（256KB）
+_MIN_PART = 8 << 20   # 小于 8MB 的文件不值得分块
+UNINST_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\SCTools2"
+
+LABELS = {
+    "installer": "安装版（自动覆盖安装并重启）",
+    "portable": "绿色版（免安装，自动解压覆盖）",
+    "portable7z": "绿色版 7z 压缩包（下载后手动解压）",
+}
 
 
 class UpdateError(OSError):
@@ -35,8 +50,19 @@ def compare_ver(a, b):
     return pa > pb
 
 
+def _asset_kind(name):
+    n = (name or "").lower()
+    if n.endswith(".exe"):
+        return "installer"
+    if n.endswith(".zip"):
+        return "portable"
+    if n.endswith(".7z"):
+        return "portable7z"
+    return ""
+
+
 def fetch_latest(timeout=8):
-    """查询最新 Release。有新版本返回 dict，已是最新返回 None，网络错误抛 UpdateError"""
+    """查询最新 Release。有新版本返回 dict（含候选资产列表），已是最新返回 None，网络错误抛 UpdateError"""
     try:
         req = urllib.request.Request(API, headers=_UA)
         data = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8"))
@@ -45,36 +71,148 @@ def fetch_latest(timeout=8):
     tag = data.get("tag_name", "")
     if not tag or not compare_ver(tag, config.APP_VER):
         return None
-    # 优先取名字含"安装/Setup"的 exe；若上传环节吞掉中文导致名字异常，回退到 exe 资产
-    exes = [a for a in data.get("assets", []) if (a.get("name") or "").endswith(".exe")]
-    asset = next((a for a in exes
-                  if "安装" in a["name"] or "setup" in a["name"].lower()), None)
-    if asset is None and exes:
-        asset = exes[0]
-    return {
-        "version": tag,
-        "notes": data.get("body") or "",
-        "asset_name": asset["name"] if asset else "",
-        "asset_url": asset["browser_download_url"] if asset else "",
-        "asset_size": asset.get("size", 0) if asset else 0,
-        "page": RELEASES_PAGE,
-    }
+    raw = data.get("assets", [])
+    has_zip = any((a.get("name") or "").lower().endswith(".zip") for a in raw)
+    assets = []
+    for a in raw:
+        name = a.get("name") or ""
+        kind = _asset_kind(name)
+        if not kind or (kind == "portable7z" and has_zip):
+            continue      # 同时提供了 zip 时不再重复列出 7z
+        assets.append({"name": name, "url": a.get("browser_download_url", ""),
+                       "size": a.get("size", 0), "kind": kind, "label": LABELS[kind]})
+    assets.sort(key=lambda x: 0 if x["kind"] == "installer" else 1)
+    return {"version": tag, "notes": data.get("body") or "",
+            "page": RELEASES_PAGE, "assets": assets}
 
 
-def download(url, dest, progress_cb=None, timeout=15):
-    """流式下载到 dest，progress_cb(已下载字节, 总字节)"""
-    req = urllib.request.Request(url, headers=_UA)
-    with urllib.request.urlopen(req, timeout=timeout) as r, open(dest, "wb") as f:
+def running_is_installed():
+    """当前是否运行于「安装版」目录：注册表 InstallLocation 与本程序所在目录一致"""
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return False
+    try:
+        import winreg
+    except ImportError:
+        return False
+    here = os.path.normcase(os.path.dirname(os.path.abspath(sys.executable)))
+    for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        try:
+            with winreg.OpenKey(hive, UNINST_KEY) as k:
+                d = winreg.QueryValueEx(k, "InstallLocation")[0]
+        except OSError:
+            continue
+        if d and os.path.normcase(os.path.normpath(d)) == here:
+            return True
+    return False
+
+
+def _open(url, headers=None, timeout=20):
+    h = dict(_UA)
+    if headers:
+        h.update(headers)
+    return urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=timeout)
+
+
+def _probe(url, timeout=20):
+    """探测服务端是否支持 Range 分块，返回 (总字节, 可分块)"""
+    try:
+        with _open(url, {"Range": "bytes=0-0"}, timeout) as r:
+            cr = r.headers.get("Content-Range") or ""
+            total = int(cr.rsplit("/", 1)[-1]) if "/" in cr else 0
+            return total, (r.status == 206 and total > 0)
+    except Exception:
+        return 0, False
+
+
+def _part_paths(dest, n):
+    return ["{}.part{}".format(dest, i) for i in range(n)]
+
+
+def _drop_parts(dest, n=CONNS):
+    for p in _part_paths(dest, n) + [dest]:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+
+
+def download(url, dest, progress_cb=None, timeout=20, conns=CONNS):
+    """下载 url 到 dest；progress_cb(已下载字节, 总字节)。可分块时多连接加速"""
+    total, multi = _probe(url, timeout)
+    if multi and total >= _MIN_PART:
+        try:
+            return _download_parts(url, dest, total, conns, progress_cb, timeout)
+        except Exception:
+            _drop_parts(dest, conns)      # 分块失败清残留，改单连接重来
+    return _download_single(url, dest, progress_cb, timeout)
+
+
+def _download_single(url, dest, progress_cb=None, timeout=20):
+    with _open(url, timeout=timeout) as r, open(dest, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
         got = 0
         while True:
-            chunk = r.read(1 << 16)
+            chunk = r.read(_CHUNK)
             if not chunk:
                 break
             f.write(chunk)
             got += len(chunk)
             if progress_cb:
                 progress_cb(got, total)
+    return dest
+
+
+def _download_parts(url, dest, total, conns, progress_cb, timeout):
+    """各连接写独立 part 文件，全部完成后按序合并为完整文件"""
+    step = total // conns + 1
+    parts = _part_paths(dest, conns)
+    lock = threading.Lock()
+    state = {"got": 0}
+    errors = []
+
+    def worker(i):
+        start = i * step
+        if start >= total:            # 该段为空，占位即可
+            open(parts[i], "wb").close()
+            return
+        end = min(start + step - 1, total - 1)
+        try:
+            with _open(url, {"Range": "bytes={}-{}".format(start, end)}, timeout) as r, \
+                    open(parts[i], "wb") as f:
+                while True:
+                    chunk = r.read(_CHUNK)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    with lock:
+                        state["got"] += len(chunk)
+                        got = state["got"]
+                    if progress_cb:
+                        progress_cb(got, total)
+        except Exception as e:
+            with lock:
+                errors.append(str(e))
+
+    threads = [threading.Thread(target=worker, args=(i,), daemon=True) for i in range(conns)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    if errors:
+        raise UpdateError(errors[0])
+    with open(dest, "wb") as out:
+        for p in parts:
+            with open(p, "rb") as f:
+                while True:
+                    chunk = f.read(1 << 20)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+    for p in parts:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
     return dest
 
 

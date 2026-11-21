@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFrame, QHB
                                QStackedWidget, QTextEdit, QVBoxLayout, QWidget)
 
 APP_NAME = "SCTools2"
-APP_VER = "3.1"
+APP_VER = "3.2"
 EXE_NAME = "SCTools2.exe"
 UNINSTALL_NAME = "uninstall.exe"
 REG_PARENT = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
@@ -36,9 +36,13 @@ def resolve_install_target(path):
     选中 C:\\Software 装到 C:\\Software\\SCTools2，避免程序文件直接铺进所选目录
     （否则卸载会清空该目录原有文件）。若所选目录本身已是 SCTools2（覆盖更新、
     或用户已选到程序目录）则原样返回，不会套成 SCTools2\\SCTools2。
+    另：若所选目录内已存在本程序的 exe（例如用户误选到现安装目录的父目录、
+    或目录名与 APP_NAME 不同），同样原样返回，防止生成 SCTools2\\SCTools2 双份。
     """
     p = os.path.normpath(os.path.abspath(path.strip()))
     if os.path.basename(p).lower() == APP_NAME.lower():
+        return p
+    if os.path.isfile(os.path.join(p, EXE_NAME)):
         return p
     return os.path.join(p, APP_NAME)
 
@@ -158,6 +162,11 @@ def make_shortcut(lnk_path, target, workdir, desc):
 
 def desktop_dir():
     return os.path.join(os.environ["USERPROFILE"], "Desktop")
+
+
+def public_desktop_dir():
+    """公共桌面目录（所有用户可见）。在 XP 且未配置 PUBLIC 时回退到默认路径"""
+    return os.path.join(os.environ.get("PUBLIC", r"C:\Users\Public"), "Desktop")
 
 
 def _reg_values(install_dir):
@@ -517,6 +526,10 @@ class InstallerWindow(QWidget):
             return
         is_update = (self._existing_dir
                      and os.path.normpath(target).lower() == self._existing_dir.lower())
+        # 目标目录内已存在本程序（例如选中了现安装目录的父目录或重命名目录）也按覆盖更新处理，
+        # 与 resolve_install_target 的 exe 探测保持一致的判定，避免双重安装且误删用户配置
+        if not is_update and os.path.isfile(os.path.join(target, EXE_NAME)):
+            is_update = True
         if not is_update and os.path.isdir(target) and os.listdir(target):
             r = QMessageBox.question(
                 self, "目录非空",
@@ -747,8 +760,11 @@ class UninstallWindow(QWidget):
         target = self._target
         kill_running_app()
         delete_registry()
-        # 快捷方式 + 开始菜单目录
+        # 快捷方式：桌面（用户 + 公共）+ 开始菜单，两者都可能残留
         for lnk in (os.path.join(desktop_dir(), APP_NAME + ".lnk"),
+                    os.path.join(desktop_dir(), "卸载 " + APP_NAME + ".lnk"),
+                    os.path.join(public_desktop_dir(), APP_NAME + ".lnk"),
+                    os.path.join(public_desktop_dir(), "卸载 " + APP_NAME + ".lnk"),
                     os.path.join(START_MENU_DIR, APP_NAME + ".lnk"),
                     os.path.join(START_MENU_DIR, "卸载 " + APP_NAME + ".lnk")):
             try:

@@ -63,6 +63,7 @@ class AppDialog(QDialog):
         close_btn.setFixedSize(22, 22)
         close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.setToolTip("关闭")
+        close_btn.setIcon(icons.icon("close", self._on_brand()))
         close_btn.clicked.connect(self.reject)
         bl.addWidget(close_btn)
         root.addWidget(bar)
@@ -77,6 +78,26 @@ class AppDialog(QDialog):
 
     def content_layout(self):
         return self._content
+
+    def _on_brand(self):
+        """标题栏关闭按钮颜色：沿父级链找 _palette_data 里的 titlebar/on_brand。
+        弹窗标题栏背景为不透明主题色，直接按该色亮度选深/浅前景，保证任何主题下可见"""
+        try:
+            from app.core.theme import on_brand_for
+        except Exception:
+            on_brand_for = None
+        cur = self.parent()
+        while cur is not None:
+            p = getattr(cur, "_palette_data", None)
+            if isinstance(p, dict) and p.get("titlebar"):
+                if on_brand_for:
+                    return on_brand_for(p["titlebar"])
+                return p.get("on_brand") or "#FFFFFF"
+            cur = cur.parent()
+        p = getattr(self, "_palette_data", None)
+        if isinstance(p, dict) and p.get("titlebar") and on_brand_for:
+            return on_brand_for(p["titlebar"])
+        return "#888888"
 
     def paintEvent(self, e):
         from PySide6.QtGui import QPainter, QColor

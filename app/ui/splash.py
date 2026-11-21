@@ -8,7 +8,7 @@ import random
 import sys
 
 from PySide6.QtCore import QSize, Qt, QRect, QTimer
-from PySide6.QtGui import QMovie, QPixmap
+from PySide6.QtGui import QColor, QMovie, QPainter, QPixmap
 from PySide6.QtWidgets import QLabel, QApplication, QVBoxLayout, QWidget
 
 from app.core import config
@@ -61,7 +61,7 @@ def resolve_path(skin):
     return random.choice(pool) if pool else None
 
 
-def _window_size(skin, base):
+def _img_size(skin, base):
     """按设置的百分比等比缩放图片尺寸（占屏幕短边的百分比）"""
     ratio = skin.get("splash_ratio", DEF_RATIO)
     try:
@@ -76,6 +76,9 @@ def _window_size(skin, base):
     limit_w = limit_h = int(short * ratio)
     f = limit_w / max(1, min(base.width(), base.height()))
     return QSize(max(40, int(base.width() * f)), max(25, int(base.height() * f)))
+
+
+_window_size = _img_size  # 兼容旧名引用
 
 
 class SplashWindow(QWidget):
@@ -132,6 +135,112 @@ class SplashWindow(QWidget):
             self._movie = None
         self.close()
         self.deleteLater()
+
+    def mousePressEvent(self, e):
+        self.finish()
+        super().mousePressEvent(e)
+
+
+# 加载指示点动画
+_DOT_FRAMES = ("", ".", "..", "...")
+
+
+class LoadingOverlay(QWidget):
+    """窗口内加载覆盖层：主窗口显示后叠加其上，深色遮罩 + 居中启动图（可选）
+    + “正在加载中…”动画文字；点击立即关闭，超时自动淡出。
+    取代独立启动窗口——主窗口先行，加载状态在窗口内部展示。"""
+
+    def __init__(self, parent, image_path=None, skin=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self._skin = skin or {}
+        self._movie = None
+        self._done = False
+        self._dot = 0
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setAlignment(Qt.AlignCenter)
+        lay.setSpacing(14)
+
+        if image_path:
+            img_box = QLabel()
+            img_box.setAlignment(Qt.AlignCenter)
+            if image_path.lower().endswith(".gif"):
+                self._movie = QMovie(image_path)
+                self._movie.jumpToFrame(0)
+                base = self._movie.currentPixmap().size()
+                self._movie.setScaledSize(_img_size(self._skin, base))
+                img_box.setMovie(self._movie)
+            else:
+                pm = QPixmap(image_path)
+                sz = _img_size(self._skin, pm.size())
+                img_box.setPixmap(pm.scaled(sz, Qt.KeepAspectRatio,
+                                            Qt.SmoothTransformation))
+            lay.addWidget(img_box)
+
+        self._tip = QLabel("正在加载中")
+        self._tip.setAlignment(Qt.AlignCenter)
+        self._tip.setStyleSheet(
+            "color: rgba(255,255,255,235); font-size: 15px; letter-spacing: 2px;")
+        lay.addWidget(self._tip)
+
+        self._tick_timer = QTimer(self)
+        self._tick_timer.setInterval(350)
+        self._tick_timer.timeout.connect(self._tick)
+        QTimer.singleShot(8000, self.finish)  # 兜底：8 秒仍未就绪也自动关闭
+
+        if parent is not None:
+            parent.installEventFilter(self)
+            self._sync_geometry()
+
+    def _tick(self):
+        """“正在加载中” 后的点号循环动画"""
+        self._dot = (self._dot + 1) % len(_DOT_FRAMES)
+        self._tip.setText("正在加载中" + _DOT_FRAMES[self._dot])
+
+    def _sync_geometry(self):
+        if self.parentWidget() is not None:
+            self.setGeometry(self.parentWidget().rect())
+            self.raise_()
+
+    def eventFilter(self, obj, event):
+        if obj is self.parentWidget() and event.type() == event.Type.Resize:
+            self._sync_geometry()
+            return False
+        return super().eventFilter(obj, event)
+
+    def paintEvent(self, event):
+        # 半透明深色遮罩：让主窗口若隐若现，突出中央加载内容
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
+        super().paintEvent(event)
+
+    def start(self):
+        if self._movie is not None:
+            self._movie.start()
+        self._tick_timer.start()
+
+    def finish(self):
+        """就绪后调用：淡出并销毁（可重复调用）"""
+        if getattr(self, "_done", False):
+            return
+        self._done = True
+        if self._movie is not None:
+            self._movie.stop()
+            self._movie = None
+        self._tick_timer.stop()
+        from PySide6.QtWidgets import QGraphicsOpacityEffect
+        eff = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(eff)
+        from PySide6.QtCore import QPropertyAnimation
+        anim = QPropertyAnimation(eff, b"opacity", self)
+        anim.setDuration(260)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.finished.connect(self.close)
+        anim.finished.connect(self.deleteLater)
+        anim.start(QPropertyAnimation.DeleteWhenStopped)
 
     def mousePressEvent(self, e):
         self.finish()

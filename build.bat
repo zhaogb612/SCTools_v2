@@ -1,15 +1,29 @@
 @echo off
-chcp 65001 >nul
-echo æ‰“åŒ… SCTools2 (PySide6, å¹³é“ºå¸ƒå±€)...
-pyinstaller --noconfirm SCTools.spec
+setlocal
+cd /d "%~dp0"
+
+set "PY=python"
+where python >nul 2>nul
+if errorlevel 1 (
+    if exist "C:\Users\Z1321\AppData\Local\Programs\Python\Python313\python.exe" (
+        set "PY=C:\Users\Z1321\AppData\Local\Programs\Python\Python313\python.exe"
+    )
+)
+
+echo ============================================
+echo  SCTools2 (PySide6, Æ½ÆÌ²¼¾Ö) ´ò°ü
+echo ============================================
+"%PY%" -m PyInstaller --noconfirm SCTools.spec
 if errorlevel 1 goto :err
 
 echo.
-echo å®Œæˆï¼šdist\SCTools2\SCTools2.exe
-echo ç»“æ„ï¼šexe ä¸è¿è¡Œåº“/èµ„æº/tools å…¨éƒ¨åŒå±‚ï¼ˆæ—  _internalï¼‰ï¼Œå¯æ•´ä½“æ¬ç§»
+echo Íê³É£ºdist\SCTools2\SCTools2.exe
+echo ½á¹¹£ºexe ÓëÔËĞĞ¿â/×ÊÔ´/tools È«²¿Í¬²ã£¨ÎŞ _internal£©£¬¿ÉÕûÌå°áÒÆ
 pause
 exit /b 0
 
 :err
-echo æ‰“åŒ…å¤±è´¥ï¼Œè¯·æ£€æŸ¥ PySide6 / pyinstaller æ˜¯å¦å·²å®‰è£…ã€‚
+echo.
+echo ´ò°üÊ§°Ü£¬Çë¼ì²é PySide6 / pyinstaller ÊÇ·ñÒÑ°²×°¡£
 pause
+exit /b 1

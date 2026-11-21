@@ -2,6 +2,7 @@
 """主窗口：自绘背景（支持模糊）+ 侧边导航 + 页面栈，皮肤/主题热切换；
 无边框窗口支持边缘拖拽缩放；使用 resources/app.ico 作为程序图标"""
 import os
+import sys
 
 from PySide6.QtCore import QPoint, QRect, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
@@ -40,6 +41,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SCTools2 v" + config.APP_VER)
         self.setWindowFlag(Qt.FramelessWindowHint)
+        # 注意：不能启用 WA_TranslucentBackground —— 它会让窗口变为 LAYERED，
+        # DWM 的 Mica/Acrylic backdrop 在 LAYERED 窗口上不渲染（探针已验证）。
+        # 系统级背景改用 DwmExtendFrameIntoClientArea(-1) 路径，其接受窗口内 alpha 像素。
         if os.path.exists(APP_ICON):
             self.setWindowIcon(QIcon(APP_ICON))
         self.resize(1060, 680)
@@ -52,6 +56,7 @@ class MainWindow(QMainWindow):
         self._palette_data = palette(self.skin.get("scheme", "晴空蓝"), self.skin.get("mode", "day"))
         self._bg_pixmap = None
         self._blur_cache = None  # ((size, blur, path), pixmap)
+        self._window_effect_supported = None  # None=未探测, True/False=是否可用
         # 无边框窗口：全局事件过滤器实现边缘拖拽缩放
         QApplication.instance().installEventFilter(self)
 
@@ -144,6 +149,13 @@ class MainWindow(QMainWindow):
         spec.loader.exec_module(mod)
         mod.run(self)
 
+    def showEvent(self, event):
+        """窗口显示后原生句柄才有效：此处应用 DWM 背景（Mica/Acrylic）。
+        不使用 WA_TranslucentBackground（会变 LAYERED，backdrop 失效）。"""
+        super().showEvent(event)
+        if not event.spontaneous():
+            self._apply_window_effect()
+
     def closeEvent(self, event):
         # 停掉后台线程，避免退出时 QThread 仍在运行
         self.tools_page._watcher.stop()
@@ -194,7 +206,7 @@ class MainWindow(QMainWindow):
     def _default_hint(self):
         w = self.stack.currentWidget()
         if w is self.nav_page:
-            return "网站导航：点击分类标签切换，右键网址卡片可编辑/删除"
+            return "网站导航：点击顶部标签快速跳转到对应分组，右键网址卡片可编辑/删除"
         if w is self.settings_page:
             return "设置：配色方案、日/夜模式、背景图与透明度"
         if w is self.check_page:
@@ -298,6 +310,7 @@ class MainWindow(QMainWindow):
         # 工具/导航卡片内图标随主题刷新
         self.tools_page.refresh_theme()
         self.nav_page.refresh_theme()
+        self._apply_window_effect()
         if not initial:
             self.update()
 
@@ -327,6 +340,63 @@ class MainWindow(QMainWindow):
         self.check_page.reset()
 
     # -- 背景绘制（含模糊） ---------------------------------------------------
+    def _dwm_supported(self):
+        """DWM 内置背景（Mica/Acrylic）仅 Win11 22H2+；
+        探测成功即缓存 True；失败保持 None，下次再试（窗口未显示时 winId 可能无效）"""
+        if self._window_effect_supported is None:
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    from ctypes import wintypes
+                    # 0x104 = DWMWA_SYSTEMBACKDROP_TYPE，查询返回 S_OK 才说明系统支持
+                    v = wintypes.DWORD(0)
+                    hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+                        wintypes.HWND(int(self.winId())), 0x104,
+                        ctypes.byref(v), ctypes.sizeof(v))
+                    if hr == 0:  # S_OK
+                        self._window_effect_supported = True
+                except Exception:
+                    pass
+        return bool(self._window_effect_supported)
+
+    def _set_dwm_backdrop(self, kind):
+        """kind: 0=无 1=Mica 2=Acrylic；同步深色模式（标题栏深色时用沉浸式深色）。
+        效果开启时必须用 DwmExtendFrameIntoClientArea(-1) 伸展帧：探针证实
+        该路径（非 LAYERED）DWM backdrop 才会真正渲染；关闭时伸展帧还原为 0。"""
+        try:
+            if sys.platform != "win32":
+                return
+            import ctypes
+            from ctypes import wintypes
+            hwnd = wintypes.HWND(int(self.winId()))
+            # 伸展帧：-1,-1,-1,-1 全部延伸至客户区（接收内部 alpha 像素）
+            m = (ctypes.c_int * 4)(-1, -1, -1, -1) if kind else (ctypes.c_int * 4)(0, 0, 0, 0)
+            ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, m)
+            attr = ctypes.c_int(int(kind))
+            # DWMWA_SYSTEMBACKDROP_TYPE=38
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 38, ctypes.byref(attr), ctypes.sizeof(attr))
+            # DWMWA_USE_IMMERSIVE_DARK_MODE=20（旧版为 19）
+            dark = ctypes.c_int(1 if self._palette_data.get("mode") == "night" else 0)
+            for attr_id in (20, 19):
+                try:
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, attr_id, ctypes.byref(dark), ctypes.sizeof(dark))
+                    break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    def _apply_window_effect(self):
+        """根据 skin.window_effect 设置系统级背景（Mica/Acrylic）或关闭。
+        效果开启时窗口背景半透明，让 DWM 背景透过；Win10/低版本自动忽略"""
+        eff = self.skin.get("window_effect", "none")
+        if eff not in ("mica", "acrylic") or not self._dwm_supported():
+            self._set_dwm_backdrop(0)
+            return
+        self._set_dwm_backdrop(2 if eff == "acrylic" else 1)
+
     def _blurred_bg(self):
         blur = int(self.skin.get("blur", 0))
         if blur <= 0 or self._bg_pixmap is None:
@@ -345,13 +415,34 @@ class MainWindow(QMainWindow):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        # 面板不透明度：始终作用于整个窗口（无论是否有背景图）。
+        # effect_on = Mica/Acrylic 生效时，窗口保留 alpha 像素透出系统毛玻璃；
+        # 关闭或不支持时，窗口整体不透明，避免“露出桌面”的半透明状态。
+        opacity = int(self.skin.get("opacity", 92))
+        effect_on = self.skin.get("window_effect", "none") in ("mica", "acrylic") \
+            and self._dwm_supported()
         bg = self._blurred_bg()
-        if bg is not None and not bg.isNull():
+        has_bg = bg is not None and not bg.isNull()
+        base = QColor(self._palette_data["bg"])
+        if has_bg:
             scaled = bg.scaled(self.size(), Qt.KeepAspectRatioByExpanding,
                                Qt.SmoothTransformation)
             x = (self.width() - scaled.width()) // 2
             y = (self.height() - scaled.height()) // 2
-            painter.drawPixmap(x, y, scaled)
+            # 先垫底色再叠加背景图：背景图本身的透明像素也不会露出桌面
+            if effect_on:
+                base.setAlpha(int(255 * opacity / 100))
+                painter.fillRect(self.rect(), base)
+                painter.setOpacity(opacity / 100.0)
+                painter.drawPixmap(x, y, scaled)
+                painter.setOpacity(1.0)
+            else:
+                painter.fillRect(self.rect(), base)
+                painter.drawPixmap(x, y, scaled)
+        elif effect_on:
+            # 无背景图 + 效果开启：半透明底色露出系统毛玻璃
+            base.setAlpha(int(255 * opacity / 100))
+            painter.fillRect(self.rect(), base)
         else:
-            painter.fillRect(self.rect(), QColor(self._palette_data["bg"]))
+            painter.fillRect(self.rect(), base)
         super().paintEvent(event)

@@ -2,7 +2,7 @@
 """网站导航页面：分类菜单栏切换 + 网址卡片（favicon）+ 悬浮提示 + 添加/编辑/删除（右键）"""
 from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFormLayout, QFrame,
+from PySide6.QtWidgets import (QComboBox, QFormLayout, QFrame,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton,
                                QScrollArea, QVBoxLayout, QWidget)
 
@@ -133,11 +133,13 @@ class NavDialog(AppDialog):
 
 
 class NavPage(QWidget):
-    """顶部横向分类菜单栏，点击分类直接切换下方网址列表"""
+    """网站导航：全部网址按分组平铺在一个滚动区内，顶部横向快捷跳转栏定位到对应分组"""
 
     def __init__(self, parent_window):
         super().__init__()
         self._win = parent_window
+        self._group_hosts = {}      # 分组名 -> 分组容器（用于快速跳转）
+        self._chips = []            # 当前所有卡片（顺序与布局一致）
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 18, 24, 16)
@@ -161,22 +163,20 @@ class NavPage(QWidget):
         header.addWidget(add_btn)
         root.addLayout(header)
 
-        # 分类菜单栏（类似导航栏，点击直接切换）
-        self._tab_bar = QWidget()
-        self._tab_lay = QHBoxLayout(self._tab_bar)
-        self._tab_lay.setContentsMargins(0, 0, 0, 0)
-        self._tab_lay.setSpacing(8)
-        self._tab_group = QButtonGroup(self)
-        self._tab_group.setExclusive(True)
-        self._tab_group.buttonClicked.connect(self._on_tab)
-        root.addWidget(self._tab_bar)
+        # 分组快速跳转栏（点击滚动到对应分组）；分组少于 2 个时隐藏
+        self._jump_bar = QWidget()
+        self._jump_lay = QHBoxLayout(self._jump_bar)
+        self._jump_lay.setContentsMargins(0, 0, 0, 0)
+        self._jump_lay.setSpacing(8)
+        self._jump_buttons = {}
+        root.addWidget(self._jump_bar)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         self._host = QWidget()
         self._host_lay = QVBoxLayout(self._host)
         self._host_lay.setContentsMargins(0, 0, 12, 0)
-        self._host_lay.setSpacing(10)
+        self._host_lay.setSpacing(14)
         scroll.setWidget(self._host)
         self._scroll = scroll
         root.addWidget(scroll, 1)
@@ -198,15 +198,23 @@ class NavPage(QWidget):
         self._walk_chips(lambda chip: chip.set_favicon())
 
     def _walk_chips(self, fn):
-        for i in range(self._host_lay.count()):
-            host = self._host_lay.itemAt(i).widget()
-            if host is None:
-                continue
-            lay = host.layout()
-            for j in range(lay.count()):
-                w = lay.itemAt(j).widget()
-                if isinstance(w, NavChip):
-                    fn(w)
+        for chip in list(self._chips):
+            fn(chip)
+
+    def _clear_host(self):
+        while self._host_lay.count():
+            it = self._host_lay.takeAt(0)
+            if it.widget():
+                it.widget().deleteLater()
+        self._group_hosts = {}
+        self._chips = []
+
+    def _clear_jump(self):
+        while self._jump_lay.count():
+            it = self._jump_lay.takeAt(0)
+            if it.widget():
+                it.widget().deleteLater()
+        self._jump_buttons = {}
 
     def rebuild(self):
         nm = self._win.nav_manager
@@ -214,44 +222,61 @@ class NavPage(QWidget):
         total = sum(len(nm.by_group(g)) for g in groups)
         self.count_label.setText("共 {} 个分类、{} 个网址（点击打开 · 右键网址卡片编辑/删除）".format(
             len(groups), total))
-        # 重建分类菜单栏
-        while self._tab_lay.count():
-            it = self._tab_lay.takeAt(0)
-            if it.widget():
-                it.widget().deleteLater()
+        self._clear_jump()
         for g in groups:
             b = QPushButton(g)
             b.setObjectName("NavTab")
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
-            self._tab_group.addButton(b)
-            self._tab_lay.addWidget(b)
-        self._tab_lay.addStretch()
-        if groups:
-            self._tab_group.buttons()[0].setChecked(True)
-            self._show_group(groups[0])
-        else:
-            self._show_group(None)
+            b.clicked.connect(lambda _=False, name=g: self._jump_to(name))
+            self._jump_buttons[g] = b
+            self._jump_lay.addWidget(b)
+        self._jump_lay.addStretch()
+        self._jump_bar.setVisible(len(groups) > 1)
 
-    def _on_tab(self, btn):
-        self._show_group(btn.text())
-
-    def _show_group(self, group):
-        while self._host_lay.count():
-            it = self._host_lay.takeAt(0)
-            if it.widget():
-                it.widget().deleteLater()
-        if not group:
+        self._clear_host()
+        if not groups:
+            empty = QLabel("暂无网址，点击右上角「添加网址」开始添加")
+            empty.setObjectName("Sub")
+            empty.setAlignment(Qt.AlignCenter)
+            self._host_lay.addWidget(empty)
             return
-        nm = self._win.nav_manager
-        host = QWidget()
-        flow = FlowLayout(host, spacing=8, fill_min=CHIP_W, stretch_last=True)
-        items = nm.by_group(group)
-        for item in items:
-            flow.addWidget(NavChip(self, item))
-        self._host_lay.addWidget(host)
+
+        all_items = []
+        for g in groups:
+            items = nm.by_group(g)
+            all_items.extend(items)
+            group_host = QWidget()
+            gh_lay = QVBoxLayout(group_host)
+            gh_lay.setContentsMargins(0, 0, 0, 0)
+            gh_lay.setSpacing(8)
+            gtitle = QLabel("{} · {} 个".format(g, len(items)))
+            gtitle.setObjectName("GroupTitle")
+            gh_lay.addWidget(gtitle)
+            flow_host = QWidget()
+            flow = FlowLayout(flow_host, spacing=8, fill_min=CHIP_W,
+                              stretch_last=True)
+            for item in items:
+                chip = NavChip(self, item)
+                flow.addWidget(chip)
+                self._chips.append(chip)
+            gh_lay.addWidget(flow_host)
+            self._group_hosts[g] = group_host
+            self._host_lay.addWidget(group_host)
         self._host_lay.addStretch()
-        self._fetch_favicons(items)
+        self._fetch_favicons(all_items)
+
+    def _jump_to(self, name):
+        """滚动到指定分组：点击跳转栏按钮后高亮该按钮并定位分组标题"""
+        btns = self._jump_buttons
+        for g, b in btns.items():
+            b.setChecked(g == name)
+        host = self._group_hosts.get(name)
+        if host is None:
+            return
+        # 标题顶部与滚动区顶部对齐（留 4px 呼吸空间）
+        top = host.mapTo(self._host, host.rect().topLeft()).y()
+        self._scroll.verticalScrollBar().setValue(max(0, top - 4))
 
     def _fetch_favicons(self, items):
         """后台批量抓取当前分组缺缓存的 favicon，完成后刷新对应卡片"""

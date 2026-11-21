@@ -4,21 +4,28 @@
 面板不透明度、缓存清理、配置导入导出与检查更新"""
 import os
 import re
+import shutil
+import subprocess
+import sys
 import tempfile
+import time
+import zipfile
 
 from PySide6.QtCore import Qt, QUrl, QTimer, Signal
 from PySide6.QtGui import (QColor, QDesktopServices, QKeySequence, QLinearGradient,
                            QPainter, QPixmap)
-from PySide6.QtWidgets import (QButtonGroup, QFileDialog, QFrame, QGridLayout,
-                               QHBoxLayout, QLabel, QLineEdit, QProgressBar,
-                               QPushButton, QScrollArea, QSlider, QTextEdit,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame,
+                               QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+                               QProgressBar, QPushButton, QRadioButton, QScrollArea,
+                               QSlider, QTextEdit, QVBoxLayout, QWidget)
 
 from app.core import config, updater
 from app.core.hotkey import parse_hotkey
-from app.core.theme import (CUSTOM_SCHEME, FONT_STACK, SCHEME_DESCS, scheme_names, palette)
+from app.core.theme import (CUSTOM_SCHEME, DEFAULT_SKIN, FONT_STACK,
+                            SCHEME_DESCS, scheme_names, palette)
 from app.ui.dialogs import AppDialog, AppMessageBox, SquareMenu
 from app.ui.flow_layout import FlowLayout
+from app.ui import icons
 
 _HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
@@ -262,33 +269,67 @@ class ColorPickerDialog(AppDialog):
 
 
 class UpdateDialog(AppDialog):
-    """发现新版本：展示更新日志，下载资产，完成后运行安装包"""
+    """发现新版本：展示更新日志 → 选择安装版/绿色版 → 加速下载 → 完成后自动更新"""
 
     def __init__(self, parent, info):
         super().__init__(parent, "发现新版本")
         self._info = info
+        self._assets = info.get("assets", [])
         self._dest = ""
-        self.setFixedWidth(430)
+        self._asset = None
+        self._radios = []
+        self._last_t = 0.0
+        self._last_got = 0
+        self.setFixedWidth(470)
         c = self.content_layout()
 
-        head = QLabel("最新版本 {}，当前 v{}{}".format(
-            info["version"], config.APP_VER,
-            "" if info["asset_url"] else "（发布页未附安装包，请到发布页手动下载）"))
+        head = QLabel("最新版本 {}，当前 v{}".format(info["version"], config.APP_VER))
         head.setWordWrap(True)
         c.addWidget(head)
 
         notes = QTextEdit()
+        notes.setObjectName("Notes")
         notes.setReadOnly(True)
         notes.setPlainText(info["notes"] or "（无更新说明）")
-        notes.setFixedHeight(150)
+        notes.setFixedHeight(140)
         c.addWidget(notes)
+
+        pick = QLabel("选择要下载的版本：")
+        pick.setObjectName("Sub")
+        c.addWidget(pick)
+        self._group = QButtonGroup(self)
+        want = "installer" if updater.running_is_installed() else "portable"
+        checked = False
+        for a in self._assets:
+            rb = QRadioButton("{}    {:.0f} MB".format(a["label"], a["size"] / 1048576.0))
+            rb.setCursor(Qt.PointingHandCursor)
+            self._group.addButton(rb)
+            c.addWidget(rb)
+            self._radios.append((rb, a))
+            if a["kind"] == want and not checked:
+                rb.setChecked(True)
+                checked = True
+        if self._radios and not checked:
+            self._radios[0][0].setChecked(True)
+        if not self._assets:
+            hint = QLabel("该版本发布页未附带可下载的安装包，请到发布页手动下载。")
+            hint.setObjectName("Sub")
+            hint.setWordWrap(True)
+            c.addWidget(hint)
+        else:
+            tip = QLabel("已按当前运行方式预选「{}」，可自行切换。".format(
+                "安装版" if want == "installer" else "绿色版"))
+            tip.setObjectName("Sub")
+            tip.setWordWrap(True)
+            c.addWidget(tip)
 
         self._prog = QProgressBar()
         self._prog.setValue(0)
         self._prog.hide()
         c.addWidget(self._prog)
         self._status = QLabel("")
-        self._status.setStyleSheet("color:#5A6772; font-size:11px;")
+        self._status.setObjectName("Sub")
+        self._status.setWordWrap(True)
         self._status.hide()
         c.addWidget(self._status)
 
@@ -296,49 +337,165 @@ class UpdateDialog(AppDialog):
         btn_row.addStretch()
         page_btn = QPushButton("打开发布页")
         page_btn.setObjectName("Ghost")
+        page_btn.setCursor(Qt.PointingHandCursor)
         page_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(info["page"])))
         btn_row.addWidget(page_btn)
-        self._dl_btn = QPushButton("下载并安装")
+        self._dl_btn = QPushButton("下载并更新")
         self._dl_btn.setObjectName("Accent")
         self._dl_btn.setCursor(Qt.PointingHandCursor)
-        self._dl_btn.setEnabled(bool(info["asset_url"]))
+        self._dl_btn.setEnabled(bool(self._assets))
         self._dl_btn.clicked.connect(self._download)
         btn_row.addWidget(self._dl_btn)
         c.addLayout(btn_row)
 
+    # -- 下载 -----------------------------------------------------------------
+    def _selected(self):
+        for rb, a in self._radios:
+            if rb.isChecked():
+                return a
+        return None
+
     def _download(self):
+        a = self._selected()
+        if a is None or not a["url"]:
+            return
+        self._asset = a
         self._dl_btn.setEnabled(False)
+        for rb, _ in self._radios:
+            rb.setEnabled(False)
         self._prog.show()
         self._prog.setValue(0)
         self._status.show()
-        self._status.setText("下载中...")
-        self._dest = os.path.join(tempfile.gettempdir(),
-                                  self._info["asset_name"] or "SC_Tools_Setup.exe")
-        self._thread = _DownloadThread(self._info["asset_url"], self._dest, self)
+        self._status.setText("正在连接…")
+        self._dest = os.path.join(tempfile.gettempdir(), a["name"])
+        self._last_t, self._last_got = time.monotonic(), 0
+        self._thread = _DownloadThread(a["url"], self._dest, self)
         self._thread.progress.connect(self._on_progress)
         self._thread.done.connect(self._on_downloaded)
         self._thread.fail.connect(self._on_download_fail)
         self._thread.start()
 
     def _on_progress(self, got, total):
-        if total > 0:
-            self._prog.setValue(int(got * 100 / total))
-            self._status.setText("下载中... {:.1f} / {:.1f} MB".format(
-                got / 1048576, total / 1048576))
+        self._prog.setValue(int(got * 100 / total) if total else 0)
+        now = time.monotonic()
+        dt = now - self._last_t
+        if dt < 0.4:
+            return
+        speed = (got - self._last_got) / dt if dt > 0 else 0
+        self._last_t, self._last_got = now, got
+        if not total:
+            self._status.setText("{:.1f} MB   {}".format(got / 1048576.0, _rate(speed)))
+            return
+        txt = "{:.1f} / {:.1f} MB   {}   {:.0f}%".format(
+            got / 1048576.0, total / 1048576.0, _rate(speed), got * 100.0 / total)
+        if speed > 0 and total > got:
+            txt += "   剩余约 {}".format(_eta((total - got) / speed))
+        self._status.setText(txt)
 
     def _on_download_fail(self, msg):
-        self._status.setText("下载失败：" + msg)
+        self._status.show()
+        self._status.setText("下载失败：{}\n可重试，或点「打开发布页」手动下载。".format(msg))
         self._dl_btn.setEnabled(True)
+        self._dl_btn.setText("重试下载")
+        for rb, _ in self._radios:
+            rb.setEnabled(True)
 
-    def _on_downloaded(self, _dest):
+    def _on_downloaded(self, dest):
         self._prog.setValue(100)
-        self._status.setText("下载完成，正在静默更新（完成后应用将自动重启）...")
-        # 静默模式：安装器自动定位已装目录、结束本程序、覆盖更新并保留配置
-        import subprocess
+        kind = self._asset["kind"]
+        if kind == "installer":
+            self._status.setText("下载完成。")
+            if AppMessageBox.question(
+                    self, "更新已就绪",
+                    "安装包已下载完成。\n\n是否立即安装并重启程序？"
+                    "（程序目录会被覆盖，配置与自添加内容保留）"):
+                self._run_installer(dest)
+        elif kind == "portable":
+            if AppMessageBox.question(
+                    self, "更新已就绪",
+                    "绿色版已下载完成。\n\n是否立即解压覆盖当前程序目录并重启？"
+                    "（配置与自添加内容保留）"):
+                self._apply_portable(dest)
+            else:
+                self._reveal(dest)
+        else:
+            AppMessageBox.info(
+                self, "下载完成",
+                "绿色版压缩包已保存到：\n{}\n\n解压后覆盖当前程序目录即可完成更新。".format(dest))
+            self._reveal(dest)
+
+    def _reveal(self, path):
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
+        self._status.show()
+        self._status.setText("文件位置：{}".format(path))
+
+    # -- 自动更新落地 ---------------------------------------------------------
+    def _run_installer(self, path):
+        self._status.setText("正在启动安装程序，本程序将随之重启…")
         try:
-            subprocess.Popen([self._dest, "--silent"])
+            subprocess.Popen([path, "--silent"])
         except OSError as e:
-            self._status.setText("安装包位置：{}（可手动运行）\n（{}）".format(self._dest, e))
+            self._status.setText("无法自动运行安装包（{}）；文件位置：{}".format(e, path))
+
+    def _apply_portable(self, archive):
+        self._status.setText("正在解压到暂存目录…")
+        self._stage = _StageThread(archive, self)
+        self._stage.progress.connect(
+            lambda i, n: self._status.setText("正在解压到暂存目录… {}/{}".format(i, n)))
+        self._stage.done.connect(self._on_staged)
+        self._stage.fail.connect(self._on_download_fail)
+        self._stage.start()
+
+    def _on_staged(self, stage):
+        target = (os.path.dirname(os.path.abspath(sys.executable))
+                  if getattr(sys, "frozen", False) else os.getcwd())
+        inner = stage
+        subs = [n for n in os.listdir(stage) if os.path.isdir(os.path.join(stage, n))]
+        files = [n for n in os.listdir(stage) if os.path.isfile(os.path.join(stage, n))]
+        if len(subs) == 1 and not files:      # 压缩包内层是单一目录时取其内容作为覆盖源
+            inner = os.path.join(stage, subs[0])
+        try:
+            script = _write_apply_script(inner, target)
+        except OSError as e:
+            self._on_download_fail("无法创建更新脚本：{}".format(e))
+            return
+        self._status.setText("即将退出并覆盖更新，完成后自动重启…")
+        subprocess.Popen(["cmd", "/c", script],
+                         creationflags=0x00000008 | 0x00000200, close_fds=True)
+        QTimer.singleShot(400, QApplication.quit)
+
+
+def _rate(bps):
+    if bps >= 1048576:
+        return "{:.1f} MB/s".format(bps / 1048576.0)
+    return "{:.0f} KB/s".format(bps / 1024.0)
+
+
+def _eta(seconds):
+    if seconds >= 60:
+        return "{} 分 {} 秒".format(int(seconds // 60), int(seconds % 60))
+    return "{:.0f} 秒".format(seconds)
+
+
+def _write_apply_script(src, target):
+    """写延迟覆盖脚本：等本程序退出后 robocopy 覆盖目标目录并重启（只用系统自带工具）"""
+    exe = os.path.join(target, "SCTools2.exe")
+    path = os.path.join(tempfile.gettempdir(), "sctools2_apply.cmd")
+    lines = [
+        "@echo off",
+        "setlocal",
+        "for /l %%i in (1,1,60) do (",
+        '  tasklist /fi "imagename eq SCTools2.exe" 2>nul | find /i "SCTools2.exe" >nul || goto copy',
+        "  ping -n 2 127.0.0.1 >nul",
+        ")",
+        ":copy",
+        'robocopy "{}" "{}" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >nul'.format(src, target),
+        'start "" "{}"'.format(exe),
+        'del "%~f0"',
+    ]
+    with open(path, "w", encoding="gbk") as f:
+        f.write("\r\n".join(lines) + "\r\n")
+    return path
 
 
 class _DownloadThread(updater.FnThread):
@@ -353,6 +510,31 @@ class _DownloadThread(updater.FnThread):
             updater.download(self._url, self._dest,
                              lambda g, t: self.progress.emit(g, t))
             self.done.emit(self._dest)
+        except Exception as e:
+            self.fail.emit(str(e))
+
+
+class _StageThread(updater.FnThread):
+    """把绿色版 zip 解压到暂存目录（先落地再覆盖，避免边改边跑）"""
+    progress = Signal(int, int)
+
+    def __init__(self, archive, parent=None):
+        super().__init__(None, parent)
+        self._archive = archive
+
+    def run(self):
+        stage = os.path.join(tempfile.gettempdir(), "SCTools2_update")
+        try:
+            shutil.rmtree(stage, ignore_errors=True)
+            os.makedirs(stage, exist_ok=True)
+            with zipfile.ZipFile(self._archive) as z:
+                names = z.namelist()
+                total = len(names)
+                for i, n in enumerate(names):
+                    z.extract(n, stage)
+                    if i % 20 == 0 or i == total - 1:
+                        self.progress.emit(i + 1, total)
+            self.done.emit(stage)
         except Exception as e:
             self.fail.emit(str(e))
 
@@ -871,7 +1053,7 @@ class SettingsPage(QWidget):
         v2.addLayout(bg_row)
 
         blur_row = QHBoxLayout()
-        l_blur = QLabel("背景模糊程度（设置背景图后生效）")
+        l_blur = QLabel("背景模糊程度（需设置背景图）")
         l_blur.setObjectName("GroupTitle")
         blur_row.addWidget(l_blur)
         self.blur_label = QLabel("{}%".format(skin.get("blur", 30)))
@@ -892,7 +1074,7 @@ class SettingsPage(QWidget):
         v3 = QVBoxLayout(sec3)
         v3.setContentsMargins(16, 14, 16, 14)
         v3.setSpacing(10)
-        l3 = QLabel("面板不透明度（设置背景图后，作用于侧边栏与全部面板）")
+        l3 = QLabel("面板不透明度（直接作用于整个窗口，无需背景图；与背景图相互独立）")
         l3.setObjectName("GroupTitle")
         v3.addWidget(l3)
         op_row = QHBoxLayout()
@@ -905,7 +1087,53 @@ class SettingsPage(QWidget):
         op_row.addWidget(self.slider, 1)
         op_row.addWidget(self.op_label)
         v3.addLayout(op_row)
+        restore_row = QHBoxLayout()
+        restore_row.addStretch()
+        self.btn_restore_appearance = QPushButton("恢复默认设置")
+        self.btn_restore_appearance.setObjectName("Ghost")
+        self.btn_restore_appearance.setCursor(Qt.PointingHandCursor)
+        self.btn_restore_appearance.setIcon(icons.icon(
+            "revert", self._win.palette_data().get("text", "#2A2F36")))
+        self.btn_restore_appearance.setToolTip(
+            "把背景图、背景模糊、面板不透明度与窗口效果恢复为默认值")
+        self.btn_restore_appearance.clicked.connect(self._restore_appearance)
+        restore_row.addWidget(self.btn_restore_appearance)
+        v3.addLayout(restore_row)
         root.addWidget(sec3)
+
+        # 窗口毛玻璃（Mica/Acrylic）：Win11 22H2+ 的系统级背景，Win10 自动忽略
+        sec_w = QFrame()
+        sec_w.setObjectName("Section")
+        vw = QVBoxLayout(sec_w)
+        vw.setContentsMargins(16, 14, 16, 14)
+        vw.setSpacing(10)
+        lw = QLabel("窗口效果（Mica 毛玻璃 / Acrylic 亚克力，仅 Win11 22H2 及以上生效，"
+                    "低版本 Windows 自动忽略）")
+        lw.setObjectName("GroupTitle")
+        lw.setWordWrap(True)
+        vw.addWidget(lw)
+        we_row = QHBoxLayout()
+        we_row.setSpacing(8)
+        self.btn_we_none = QPushButton("无")
+        self.btn_we_mica = QPushButton("Mica 毛玻璃")
+        self.btn_we_acrylic = QPushButton("Acrylic 亚克力")
+        for b in (self.btn_we_none, self.btn_we_mica, self.btn_we_acrylic):
+            b.setObjectName("Ghost")
+            b.setCheckable(True)
+            b.setCursor(Qt.PointingHandCursor)
+        self._we_group = QButtonGroup(self)
+        for b in (self.btn_we_none, self.btn_we_mica, self.btn_we_acrylic):
+            self._we_group.addButton(b)
+        self._we_group.setExclusive(True)
+        self.btn_we_none.clicked.connect(lambda: self.select_window_effect("none"))
+        self.btn_we_mica.clicked.connect(lambda: self.select_window_effect("mica"))
+        self.btn_we_acrylic.clicked.connect(lambda: self.select_window_effect("acrylic"))
+        we_row.addWidget(self.btn_we_none)
+        we_row.addWidget(self.btn_we_mica)
+        we_row.addWidget(self.btn_we_acrylic)
+        we_row.addStretch()
+        vw.addLayout(we_row)
+        root.addWidget(sec_w)
 
         # 关于 + 版本/更新 + 配置导入导出
         sec4 = QFrame()
@@ -966,6 +1194,10 @@ class SettingsPage(QWidget):
         mode = skin.get("mode", "day")
         (self.btn_day if mode == "day" else self.btn_night).setChecked(True)
         (self.btn_tb_mac if skin.get("titlebar_style", "mac") != "system" else self.btn_tb_sys).setChecked(True)
+        effect = skin.get("window_effect", "none")
+        (self.btn_we_none if effect == "none" else
+         self.btn_we_mica if effect == "mica" else self.btn_we_acrylic).setChecked(True)
+        self._sync_bg_widgets()
 
     # -- 色块行管理 ---------------------------------------------------------
     def _custom_theme(self, name):
@@ -1085,6 +1317,47 @@ class SettingsPage(QWidget):
 
     def select_splash_size(self, size_mode):
         self._win.skin["splash_size_mode"] = size_mode
+        self._win.apply_theme()
+
+    def select_window_effect(self, mode):
+        self._win.skin["window_effect"] = mode
+        self._win.apply_theme()
+
+    def _sync_bg_widgets(self):
+        """背景图相关控件联动：无背景图时仅「模糊」滑条置灰（模糊只对背景图有意义）；
+        「面板不透明度」始终可调——它作用于整个窗口，与是否设置背景图无关"""
+        has_bg = bool(self._win.skin.get("bg_image", ""))
+        self.blur_slider.setEnabled(has_bg)
+        self.blur_slider.setToolTip("" if has_bg else "请先设置背景图")
+        self.blur_label.setEnabled(has_bg)
+        # 不透明度滑条常开
+        self.slider.setEnabled(True)
+        self.slider.setToolTip("")
+        self.op_label.setEnabled(True)
+
+    def _restore_appearance(self):
+        """恢复外观默认：清除背景图，模糊/不透明度/窗口效果回默认值"""
+        if not AppMessageBox.question(
+                self, "恢复默认设置",
+                "将清除背景图并把背景模糊、面板不透明度、窗口效果恢复为默认值，确定继续？"):
+            return
+        skin = self._win.skin
+        skin["bg_image"] = ""
+        skin["blur"] = int(DEFAULT_SKIN.get("blur", 30))
+        skin["opacity"] = int(DEFAULT_SKIN.get("opacity", 92))
+        skin["window_effect"] = "none"
+        self.ed_bg.setText("")
+        self.blur_slider.blockSignals(True)
+        self.blur_slider.setValue(int(DEFAULT_SKIN.get("blur", 30)))
+        self.blur_slider.blockSignals(False)
+        self.blur_label.setText("{}%".format(self.blur_slider.value()))
+        self.slider.blockSignals(True)
+        self.slider.setValue(int(DEFAULT_SKIN.get("opacity", 92)))
+        self.slider.blockSignals(False)
+        self.op_label.setText("{}%".format(self.slider.value()))
+        (self.btn_we_none if skin.get("window_effect", "none") == "none" else
+         self.btn_we_mica if skin.get("window_effect", "none") == "mica" else self.btn_we_acrylic).setChecked(True)
+        self._sync_bg_widgets()
         self._win.apply_theme()
 
     def _on_splash_ratio(self, v):
@@ -1262,11 +1535,13 @@ class SettingsPage(QWidget):
         if p:
             self._win.skin["bg_image"] = p
             self.ed_bg.setText(p)
+            self._sync_bg_widgets()
             self._win.apply_theme()
 
     def _clear_bg(self):
         self._win.skin["bg_image"] = ""
         self.ed_bg.setText("")
+        self._sync_bg_widgets()
         self._win.apply_theme()
 
     def _on_blur(self, v):
