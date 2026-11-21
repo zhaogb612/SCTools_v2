@@ -1,24 +1,11 @@
 # -*- coding: utf-8 -*-
-"""关于页：当前版本、应用简介、项目地址、作者、开源协议，
-以及检查更新与打开缓存文件夹（配置导入导出/恢复默认/清除缓存位于设置页）"""
-import os
-
-from PySide6.QtCore import QUrl, Qt
-from PySide6.QtGui import QDesktopServices
+"""关于页：当前版本、应用简介、项目地址、作者、开源协议与检查更新
+（配置导入导出/恢复默认/缓存维护位于设置页「配置与维护」区块）"""
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel,
                                QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from app.core import config
-
-
-def _cache_dir():
-    """图标缓存目录（与 favicon/file_icon 保持一致）"""
-    try:
-        from app.core import favicon
-        return favicon.CACHE_DIR
-    except Exception:
-        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-        return os.path.join(base, "SCTools", "cache")
 
 
 def _label(text, obj):
@@ -115,15 +102,7 @@ class AboutPage(QScrollArea):
         self.btn_check = _btn("检查更新", "Accent", self._check_update)
         root.addWidget(self.btn_check)
 
-        ops = QHBoxLayout()
-        ops.setSpacing(8)
-        btn_cache_dir = _btn("打开缓存文件夹", "Ghost", self._open_cache_dir)
-        ops.addWidget(btn_cache_dir)
-        ops.addStretch()
-        root.addLayout(ops)
-
-        tip = QLabel("配置导出/导入、恢复默认配置与清除缓存请在「设置与皮肤」页中操作；"
-                     "缓存位于 %LOCALAPPDATA%\\SCTools\\cache，清理后图标会在下次启动时重新生成。")
+        tip = QLabel("配置导出/导入、恢复默认配置、清除与查看缓存请在「设置与皮肤」页中操作。")
         tip.setObjectName("AboutTip")
         tip.setWordWrap(True)
         root.addWidget(tip)
@@ -165,12 +144,3 @@ class AboutPage(QScrollArea):
         AppMessageBox.warning(self, "检查更新失败",
                               msg + "\n\nGitHub 在部分网络环境下可能无法直连，"
                                     "可稍后重试或到项目发布页手动下载。")
-
-    def _open_cache_dir(self):
-        d = _cache_dir()
-        if os.path.isdir(d):
-            QDesktopServices.openUrl(QUrl.fromLocalFile(d))
-        else:
-            from app.ui.dialogs import AppMessageBox
-            AppMessageBox.info(self, "打开缓存文件夹",
-                               "缓存目录尚未创建：\n" + d + "\n\n首次抓取图标后会自动生成。")

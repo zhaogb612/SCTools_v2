@@ -1158,13 +1158,13 @@ class SettingsPage(QWidget):
         vw.addLayout(we_row)
         root.addWidget(sec_w)
 
-        # 配置与维护：导出/导入配置、恢复默认配置、清除缓存
+        # 配置与维护：导出/导入配置、恢复默认配置、清除/打开缓存
         sec_m = QFrame()
         sec_m.setObjectName("Section")
         vm = QVBoxLayout(sec_m)
         vm.setContentsMargins(16, 14, 16, 14)
         vm.setSpacing(10)
-        lm = QLabel("配置与维护（配置恢复默认/导入导出会重建设置页）")
+        lm = QLabel("配置与维护")
         lm.setObjectName("GroupTitle")
         vm.addWidget(lm)
         m_row1 = QHBoxLayout()
@@ -1186,17 +1186,24 @@ class SettingsPage(QWidget):
         m_row2 = QHBoxLayout()
         m_row2.setSpacing(8)
         self.btn_clear_cache = QPushButton("清除缓存")
-        self.btn_clear_cache.setObjectName("Ghost")
-        self.btn_clear_cache.setCursor(Qt.PointingHandCursor)
+        self.btn_open_cache = QPushButton("打开缓存文件夹")
+        for b in (self.btn_clear_cache, self.btn_open_cache):
+            b.setObjectName("Ghost")
+            b.setCursor(Qt.PointingHandCursor)
         self.btn_clear_cache.setToolTip(
             "清理程序/网站图标缓存（%LOCALAPPDATA%\\SCTools），下次启动重新生成")
+        self.btn_open_cache.setToolTip(
+            "在资源管理器中打开图标缓存目录（%LOCALAPPDATA%\\SCTools）")
         self.btn_clear_cache.clicked.connect(self._clear_cache)
+        self.btn_open_cache.clicked.connect(self._open_cache_dir)
+        m_row2.addWidget(self.btn_clear_cache)
+        m_row2.addWidget(self.btn_open_cache)
+        m_row2.addStretch()
+        vm.addLayout(m_row2)
         cache_tip = QLabel("图标缓存目录：%LOCALAPPDATA%\\SCTools（配置与自添加启动图不受影响）")
         cache_tip.setObjectName("Sub")
         cache_tip.setWordWrap(True)
-        m_row2.addWidget(self.btn_clear_cache)
-        m_row2.addWidget(cache_tip, 1)
-        vm.addLayout(m_row2)
+        vm.addWidget(cache_tip)
         root.addWidget(sec_m)
 
         root.addStretch()
@@ -1542,3 +1549,17 @@ class SettingsPage(QWidget):
                     pass
         AppMessageBox.info(self, "清除缓存",
                            "已清理 {} 个缓存文件，图标会在下次启动时重新生成。".format(removed))
+
+    def _open_cache_dir(self):
+        """在资源管理器中打开图标缓存目录"""
+        try:
+            from app.core import favicon
+            d = favicon.CACHE_DIR
+        except Exception:
+            d = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+                             "SCTools", "cache")
+        if os.path.isdir(d):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(d))
+        else:
+            AppMessageBox.info(self, "打开缓存文件夹",
+                               "缓存目录尚未创建：\n" + d + "\n\n首次抓取图标后会自动生成。")
