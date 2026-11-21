@@ -18,9 +18,13 @@ RELEASES_PAGE = "https://github.com/{}/releases/latest".format(REPO)
 _UA = {"User-Agent": "SC-Tools-Updater"}
 
 CONNS = 6             # 分块下载连接数
-_CHUNK = 1 << 18      # 单连接读取块（256KB）
+_CHUNK = 1 << 20      # 单连接读取块（1MB，降低磁盘与小文件下载开销）
 _MIN_PART = 8 << 20   # 小于 8MB 的文件不值得分块
 UNINST_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\SCTools2"
+
+# GitHub 下载镜像（直连失败时依次回退；前缀式代理，如 gh-proxy.com/https://github.com/…）
+MIRRORS = ("https://gh-proxy.com/", "https://ghfast.top/",
+           "https://github.moeyy.xyz/")
 
 LABELS = {
     "installer": "安装版（自动覆盖安装并重启）",
@@ -61,7 +65,7 @@ def _asset_kind(name):
     return ""
 
 
-def fetch_latest(timeout=8):
+def fetch_latest(timeout=12):
     """查询最新 Release。有新版本返回 dict（含候选资产列表），已是最新返回 None，网络错误抛 UpdateError"""
     try:
         req = urllib.request.Request(API, headers=_UA)
@@ -106,14 +110,14 @@ def running_is_installed():
     return False
 
 
-def _open(url, headers=None, timeout=20):
+def _open(url, headers=None, timeout=60):
     h = dict(_UA)
     if headers:
         h.update(headers)
     return urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=timeout)
 
 
-def _probe(url, timeout=20):
+def _probe(url, timeout=60):
     """探测服务端是否支持 Range 分块，返回 (总字节, 可分块)"""
     try:
         with _open(url, {"Range": "bytes=0-0"}, timeout) as r:
@@ -136,8 +140,35 @@ def _drop_parts(dest, n=CONNS):
             pass
 
 
-def download(url, dest, progress_cb=None, timeout=20, conns=CONNS):
-    """下载 url 到 dest；progress_cb(已下载字节, 总字节)。可分块时多连接加速"""
+def _mirror_url(url, mirror):
+    """镜像前缀式代理拼接：仅对 github.com 资源生效，其它源原样返回"""
+    for p in ("https://github.com/", "http://github.com/"):
+        if url.startswith(p):
+            rest = url[len(p):]
+            return mirror + "https://github.com/" + rest
+    return None
+
+
+def download(url, dest, progress_cb=None, timeout=60, conns=CONNS):
+    """下载 url 到 dest；progress_cb(已下载字节, 总字节)。
+    直连失败时自动依次回退 GitHub 镜像；所有源都失败才抛 UpdateError"""
+    candidates = [url]
+    for m in MIRRORS:
+        u = _mirror_url(url, m)
+        if u:
+            candidates.append(u)
+    last = None
+    for u in candidates:
+        try:
+            return _download_one(u, dest, progress_cb, timeout, conns)
+        except Exception as e:
+            last = e
+            _drop_parts(dest, conns)   # 清理残留 part 文件再试下一源
+    raise UpdateError("所有下载源均失败：{}".format(last))
+
+
+def _download_one(url, dest, progress_cb, timeout, conns):
+    """单源下载：可分块时多连接加速，否则单连接"""
     total, multi = _probe(url, timeout)
     if multi and total >= _MIN_PART:
         try:
@@ -147,7 +178,7 @@ def download(url, dest, progress_cb=None, timeout=20, conns=CONNS):
     return _download_single(url, dest, progress_cb, timeout)
 
 
-def _download_single(url, dest, progress_cb=None, timeout=20):
+def _download_single(url, dest, progress_cb=None, timeout=60):
     with _open(url, timeout=timeout) as r, open(dest, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
         got = 0

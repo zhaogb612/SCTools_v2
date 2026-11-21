@@ -182,7 +182,7 @@ class LoadingOverlay(QWidget):
         self._tip = QLabel("正在加载中")
         self._tip.setAlignment(Qt.AlignCenter)
         self._tip.setStyleSheet(
-            "color: rgba(255,255,255,235); font-size: 15px; letter-spacing: 2px;")
+            "color: rgba(60,60,60,235); font-size: 15px; letter-spacing: 2px;")
         lay.addWidget(self._tip)
 
         self._tick_timer = QTimer(self)
@@ -211,9 +211,10 @@ class LoadingOverlay(QWidget):
         return super().eventFilter(obj, event)
 
     def paintEvent(self, event):
-        # 半透明深色遮罩：让主窗口若隐若现，突出中央加载内容
+        # 纯不透明白底：加载期间完全遮住主窗口内容（用户视角是“模糊/被盖住”），
+        # 就绪淡出后才露出应用界面；避免半透明遮罩透出后续内容。
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
+        painter.fillRect(self.rect(), QColor(255, 255, 255, 255))
         super().paintEvent(event)
 
     def start(self):

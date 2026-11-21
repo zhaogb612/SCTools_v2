@@ -5,7 +5,8 @@ import os
 import sys
 
 from PySide6.QtCore import QPoint, QRect, QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
+from PySide6.QtGui import (QBrush, QColor, QIcon, QImage, QLinearGradient,
+                           QPainter, QPixmap)
 from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsBlurEffect,
                                QGraphicsScene, QHBoxLayout, QLineEdit,
                                QListWidget, QListWidgetItem, QMainWindow,
@@ -15,8 +16,9 @@ from app.core import config
 from app.core.app_manager import AppManager
 from app.core.hotkey import HotkeyManager, parse_hotkey
 from app.core.nav_manager import NavManager
-from app.core.theme import DEFAULT_SKIN, SCHEMES, build_qss, palette
+from app.core.theme import DEFAULT_SKIN, SCHEMES, _mix, build_qss, palette
 from app.ui import icons
+from app.ui.about_page import AboutPage
 from app.ui.check_page import CheckPage
 from app.ui.nav_page import NavPage
 from app.ui.settings_page import SettingsPage
@@ -31,6 +33,7 @@ FAV_VIEW_NAME = "我的收藏"
 NAV_PAGE_NAME = "网站导航"
 SET_PAGE_NAME = "设置与皮肤"
 CHECK_PAGE_NAME = "配置检测"
+ABOUT_PAGE_NAME = "关于"
 
 APP_ICON = os.path.join(config.ICON_DIR, "..", "app.ico")
 _EDGE = 6  # 边缘拖拽缩放热区宽度
@@ -56,7 +59,6 @@ class MainWindow(QMainWindow):
         self._palette_data = palette(self.skin.get("scheme", "晴空蓝"), self.skin.get("mode", "day"))
         self._bg_pixmap = None
         self._blur_cache = None  # ((size, blur, path), pixmap)
-        self._window_effect_supported = None  # None=未探测, True/False=是否可用
         # 无边框窗口：全局事件过滤器实现边缘拖拽缩放
         QApplication.instance().installEventFilter(self)
 
@@ -105,10 +107,12 @@ class MainWindow(QMainWindow):
         self.nav_page = NavPage(self)
         self.settings_page = SettingsPage(self)
         self.check_page = CheckPage(self)
+        self.about_page = AboutPage(self)
         self.stack.addWidget(self.tools_page)
         self.stack.addWidget(self.nav_page)
         self.stack.addWidget(self.settings_page)
         self.stack.addWidget(self.check_page)
+        self.stack.addWidget(self.about_page)
 
         self._fill_sidebar()
         self.nav_list.currentRowChanged.connect(self._on_nav)
@@ -211,6 +215,8 @@ class MainWindow(QMainWindow):
             return "设置：配色方案、日/夜模式、背景图与透明度"
         if w is self.check_page:
             return "配置检测：查看本机硬件与系统配置（CPU/内存/显卡/硬盘等）"
+        if w is self.about_page:
+            return "关于：版本信息、项目地址与配置/缓存维护"
         return "SCTools2 v" + config.APP_VER
 
     def _on_nav_hover(self, item):
@@ -221,6 +227,8 @@ class MainWindow(QMainWindow):
             hint = "主题、背景与日/夜模式设置"
         elif name == CHECK_PAGE_NAME:
             hint = "检测本机硬件与系统配置，附带配置文件扫描"
+        elif name == ABOUT_PAGE_NAME:
+            hint = "版本信息、项目地址、检查更新与配置/缓存维护"
         elif name == FAV_VIEW_NAME:
             hint = "我的收藏：收藏的应用集中显示，右键卡片可取消收藏"
         else:
@@ -234,7 +242,7 @@ class MainWindow(QMainWindow):
         self.nav_list.clear()
         entries = [(CHECK_PAGE_NAME, "info"), (FAV_VIEW_NAME, "star")] + \
                   [(c, CATEGORY_ICON.get(c, "all")) for c in self.app_manager.categories] + \
-                  [(NAV_PAGE_NAME, "globe"), (SET_PAGE_NAME, "settings")]
+                  [(NAV_PAGE_NAME, "globe"), (SET_PAGE_NAME, "settings"), (ABOUT_PAGE_NAME, "info")]
         for name, icon_name in entries:
             item = QListWidgetItem(icons.icon(icon_name, self._palette_data["sidebar_sub"]), name)
             self.nav_list.addItem(item)
@@ -248,6 +256,8 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentWidget(self.settings_page)
         elif name == CHECK_PAGE_NAME:
             self.stack.setCurrentWidget(self.check_page)
+        elif name == ABOUT_PAGE_NAME:
+            self.stack.setCurrentWidget(self.about_page)
         else:
             self.tools_page.set_category(name or "全部应用")
             self.stack.setCurrentWidget(self.tools_page)
@@ -275,6 +285,9 @@ class MainWindow(QMainWindow):
                 custom = {"brand": self.skin.get("custom_brand", ""),
                           "bg": self.skin.get("custom_bg", "")}
         self._palette_data = palette(scheme, self.skin.get("mode", "day"), custom)
+        eff = self.skin.get("window_effect", "none")
+        self._palette_data = self._effect_palette(self._palette_data, eff)
+        self._eff = eff
         bg = self.skin.get("bg_image", "")
         if bg and os.path.exists(bg):
             self._bg_pixmap = QPixmap(bg)
@@ -296,6 +309,8 @@ class MainWindow(QMainWindow):
                 ic = "settings"
             elif name == CHECK_PAGE_NAME:
                 ic = "info"
+            elif name == ABOUT_PAGE_NAME:
+                ic = "info"
             elif name == FAV_VIEW_NAME:
                 ic = "star"
             elif name == "全部应用":
@@ -310,6 +325,7 @@ class MainWindow(QMainWindow):
         # 工具/导航卡片内图标随主题刷新
         self.tools_page.refresh_theme()
         self.nav_page.refresh_theme()
+        self.about_page.ver_label.setText("v" + config.APP_VER)
         self._apply_window_effect()
         if not initial:
             self.update()
@@ -339,30 +355,11 @@ class MainWindow(QMainWindow):
         self.tools_page.rebuild()
         self.check_page.reset()
 
-    # -- 背景绘制（含模糊） ---------------------------------------------------
-    def _dwm_supported(self):
-        """DWM 内置背景（Mica/Acrylic）仅 Win11 22H2+；
-        探测成功即缓存 True；失败保持 None，下次再试（窗口未显示时 winId 可能无效）"""
-        if self._window_effect_supported is None:
-            if sys.platform == "win32":
-                try:
-                    import ctypes
-                    from ctypes import wintypes
-                    # 0x104 = DWMWA_SYSTEMBACKDROP_TYPE，查询返回 S_OK 才说明系统支持
-                    v = wintypes.DWORD(0)
-                    hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
-                        wintypes.HWND(int(self.winId())), 0x104,
-                        ctypes.byref(v), ctypes.sizeof(v))
-                    if hr == 0:  # S_OK
-                        self._window_effect_supported = True
-                except Exception:
-                    pass
-        return bool(self._window_effect_supported)
-
+    # -- 背景绘制（含窗口效果） ---------------------------------------------
     def _set_dwm_backdrop(self, kind):
         """kind: 0=无 1=Mica 2=Acrylic；同步深色模式（标题栏深色时用沉浸式深色）。
-        效果开启时必须用 DwmExtendFrameIntoClientArea(-1) 伸展帧：探针证实
-        该路径（非 LAYERED）DWM backdrop 才会真正渲染；关闭时伸展帧还原为 0。"""
+        仅作尽力而为的系统级尝试（部分 Win11 上 DWM backdrop 不渲染，
+        可见差异统一由 paintEvent 模拟层保证，因此失败也完全无碍）。"""
         try:
             if sys.platform != "win32":
                 return
@@ -388,14 +385,50 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _effect_palette(self, p, eff):
+        """Mica/Acrylic 对面板色板做色调偏移：不改变 brand/accent/text，
+        仅把面板类颜色向白色（mica）/ 品牌色（acrylic）混合，让整体观感
+        不在依赖 DWM 的情况下也能明显区分三种状态。"""
+        if eff not in ("mica", "acrylic"):
+            return p
+        mix = 0.10 if eff == "mica" else 0.24
+        to = "#FFFFFF" if eff == "mica" else p.get("brand", "#FFFFFF")
+        out = dict(p)
+        for k in ("panel", "panel2", "sidebar", "selected", "hover", "border"):
+            if k in out:
+                out[k] = _mix(out[k], to, mix)
+        return out
+
     def _apply_window_effect(self):
-        """根据 skin.window_effect 设置系统级背景（Mica/Acrylic）或关闭。
-        效果开启时窗口背景半透明，让 DWM 背景透过；Win10/低版本自动忽略"""
+        """根据 skin.window_effect 应用窗口背景效果：
+        DWM backdrop 尽力而为；Mica/Acrylic 的可见差异由面板色调偏移 +
+        paintEvent 模拟层共同保证，任何机器上都肉眼可辨。"""
         eff = self.skin.get("window_effect", "none")
-        if eff not in ("mica", "acrylic") or not self._dwm_supported():
+        if eff in ("mica", "acrylic"):
+            self._set_dwm_backdrop(2 if eff == "acrylic" else 1)
+        else:
             self._set_dwm_backdrop(0)
-            return
-        self._set_dwm_backdrop(2 if eff == "acrylic" else 1)
+
+    def _draw_effect_wash(self, painter, eff):
+        """窗口背景模拟层：Mica = 冷白霜 + 顶部天光渐变；
+        Acrylic = 品牌色雾 + 更强渐变。画在底色之上、子控件之下。"""
+        rect = self.rect()
+        if eff == "mica":
+            painter.fillRect(rect, QColor(255, 255, 255, 26))          # 白霜
+            grad = QLinearGradient(0, 0, 0, self.height())
+            grad.setColorAt(0.0, QColor(255, 255, 255, 52))
+            grad.setColorAt(1.0, QColor(255, 255, 255, 0))
+            painter.fillRect(rect, QBrush(grad))
+        else:  # acrylic
+            brand = QColor(self._palette_data["brand"])
+            brand.setAlpha(66)                                          # 品牌色雾
+            painter.fillRect(rect, brand)
+            grad = QLinearGradient(0, 0, 0, self.height())
+            a = QColor(self._palette_data["brand"])
+            a.setAlpha(150)
+            grad.setColorAt(0.0, a)
+            grad.setColorAt(1.0, QColor(255, 255, 255, 0))
+            painter.fillRect(rect, QBrush(grad))
 
     def _blurred_bg(self):
         blur = int(self.skin.get("blur", 0))
@@ -416,11 +449,10 @@ class MainWindow(QMainWindow):
     def paintEvent(self, event):
         painter = QPainter(self)
         # 面板不透明度：始终作用于整个窗口（无论是否有背景图）。
-        # effect_on = Mica/Acrylic 生效时，窗口保留 alpha 像素透出系统毛玻璃；
-        # 关闭或不支持时，窗口整体不透明，避免“露出桌面”的半透明状态。
+        # Mica/Acrylic 的观感：机器不支持 DWM backdrop 时由本方法画模拟层，
+        # 使三种状态切换在任何机器上都肉眼可辨。
         opacity = int(self.skin.get("opacity", 92))
-        effect_on = self.skin.get("window_effect", "none") in ("mica", "acrylic") \
-            and self._dwm_supported()
+        eff = self._eff if hasattr(self, "_eff") else self.skin.get("window_effect", "none")
         bg = self._blurred_bg()
         has_bg = bg is not None and not bg.isNull()
         base = QColor(self._palette_data["bg"])
@@ -430,7 +462,7 @@ class MainWindow(QMainWindow):
             x = (self.width() - scaled.width()) // 2
             y = (self.height() - scaled.height()) // 2
             # 先垫底色再叠加背景图：背景图本身的透明像素也不会露出桌面
-            if effect_on:
+            if opacity < 100:
                 base.setAlpha(int(255 * opacity / 100))
                 painter.fillRect(self.rect(), base)
                 painter.setOpacity(opacity / 100.0)
@@ -439,10 +471,11 @@ class MainWindow(QMainWindow):
             else:
                 painter.fillRect(self.rect(), base)
                 painter.drawPixmap(x, y, scaled)
-        elif effect_on:
-            # 无背景图 + 效果开启：半透明底色露出系统毛玻璃
-            base.setAlpha(int(255 * opacity / 100))
+            painter.fillRect(self.rect(), QColor(0, 0, 0, int(40 * (1 - opacity / 100.0))))
+        elif eff in ("mica", "acrylic"):
+            # 无背景图 + 效果开启：模拟层（Mica 冷白霜 / Acrylic 品牌雾）
             painter.fillRect(self.rect(), base)
+            self._draw_effect_wash(painter, eff)
         else:
             painter.fillRect(self.rect(), base)
         super().paintEvent(event)

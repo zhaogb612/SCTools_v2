@@ -10,14 +10,15 @@ from app.ui import icons
 
 
 class SquareMenu(QMenu):
-    """方角菜单：QSS 只能去掉 QSS 层圆角，Win11 的系统级弹窗圆角需 DWM 关闭"""
+    """方角菜单：QSS 只能去掉 QSS 层圆角，Win11 的系统级弹窗圆角需 DWM 关闭。
+    背景一律实心（内联主题色覆盖全局带透明度的 QSS）：
+    半透明会让菜单走 LAYERED 合成路径，部分环境渲染异常导致
+    “右键收藏弹出后一闪而过/看不清”，实心后任何机器都稳定可读。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         if sys.platform == "win32":
-            # 半透明 + 关闭系统投影：投影会强制弹窗走不透明合成路径，
-            # 导致 QSS rgba 与面板不透明度设置对菜单失效
-            self.setAttribute(Qt.WA_TranslucentBackground, True)
+            # 注意：不启用 WA_TranslucentBackground（会变 LAYERED，QSS 渲染不稳）
             self.setWindowFlags(self.windowFlags()
                                 | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
 
@@ -32,6 +33,36 @@ class SquareMenu(QMenu):
                     hwnd, 33, ctypes.byref(pref), 4)  # DWMWA_WINDOW_CORNER_PREFERENCE
             except Exception:
                 pass
+            self._apply_solid_style()
+
+    def _apply_solid_style(self):
+        """实心背景：沿父链取当前主题面板色/文字色，内联覆盖全局
+        （带面板不透明度 alpha 的）QSS，保证菜单任何时候都不透明、不闪现"""
+        p = None
+        cur = self.parent()
+        while cur is not None:
+            d = getattr(cur, "_palette_data", None)
+            if isinstance(d, dict) and d.get("panel"):
+                p = d
+                break
+            cur = cur.parentWidget() if hasattr(cur, "parentWidget") else None
+        if not p:
+            return
+        panel = p.get("panel", "#FFFFFF")
+        text = p.get("text", "#2A2F36")
+        selected = p.get("selected", "#D8ECF9")
+        accent = p.get("accent", "#3F5AA9")
+        border = p.get("border", "#C9D6DE")
+        self.setStyleSheet(
+            "QMenu {{ background: {panel}; color: {text}; border: 1px solid {border};"
+            " padding: 3px 0; margin: 0; }}"
+            "QMenu::item {{ padding: 6px 24px 6px 10px; font-size: 12px;"
+            " background: transparent; }}"
+            "QMenu::icon {{ margin-left: 10px; margin-right: 8px; padding: 0; }}"
+            "QMenu::item:selected {{ background: {selected}; color: {accent}; }}"
+            "QMenu::separator {{ height: 1px; background: {border}; margin: 4px 0; }}"
+            .format(panel=panel, text=text, selected=selected,
+                    accent=accent, border=border))
 
 
 class AppDialog(QDialog):

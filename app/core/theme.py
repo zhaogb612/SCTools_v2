@@ -52,7 +52,8 @@ DEFAULT_SKIN = {"scheme": "晴空蓝", "mode": "day", "bg_image": "", "opacity":
                 "custom_brand": "", "custom_bg": "", "custom_themes": [],
                 "titlebar_style": "mac", "show_tool_icons": True,
                 "splash_mode": "random", "splash_custom": "",
-                "splash_ratio": 40, "window_effect": "none"}
+                "splash_ratio": 40, "window_effect": "none",
+                "auto_check_update": False}
 
 
 def on_brand_for(hexc):
@@ -306,6 +307,16 @@ QSlider::handle:horizontal {{
 }}
 QFrame#Swatch {{ border: 2px solid {border}; }}
 QFrame#Section {{ background: {card}; border: 1px solid {border}; }}
+
+QWidget#AboutBody {{ background: transparent; }}
+QLabel#AboutTitle {{ font-size: 22px; font-weight: bold; color: {text}; }}
+QLabel#AboutVersion {{
+    font-size: 13px; font-weight: bold; color: {accent};
+    border: 1px solid {border}; padding: 2px 10px;
+}}
+QLabel#AboutField {{ font-size: 12px; font-weight: bold; color: {sub}; min-width: 64px; }}
+QLabel#AboutTip {{ font-size: 11px; color: {sub}; margin-top: 6px; }}
+QFrame#AboutSep {{ background: {border}; }}
 """.format(
         font=FONT_STACK,
         titlebar=s(p["titlebar"]), bg=s(p["bg"]), bg_solid=p["bg"],

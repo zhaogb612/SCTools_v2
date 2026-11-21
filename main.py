@@ -55,8 +55,6 @@ def main():
         overlay.start()
         app.processEvents()
 
-    t0 = time.monotonic()
-
     def _finish_overlay():
         if overlay is not None:
             overlay.finish()
@@ -64,6 +62,28 @@ def main():
     if overlay is not None:
         # 至少展示 MIN_SPLASH_MS 后淡出
         QTimer.singleShot(MIN_SPLASH_MS, _finish_overlay)
+
+    # 自动检查更新（设置中开启时）：等窗口就绪后静默查询，发现新版本才弹出提示
+    if skin.get("auto_check_update", False):
+        from app.core import updater
+        from app.ui.settings_page import UpdateDialog
+
+        def _auto_fetch():
+            try:
+                return updater.fetch_latest(timeout=10)
+            except Exception:
+                return None
+
+        def _auto_result(info):
+            # 该槽由 QThread 信号在队列中触发，运行于主线程，可安全弹窗
+            if info:
+                dlg = UpdateDialog(win, info)
+                dlg.exec()
+
+        _t = updater.FnThread(_auto_fetch, win)
+        _t.done.connect(_auto_result)
+        QTimer.singleShot(2500, _t.start)
+
     sys.exit(app.exec_())
 
 

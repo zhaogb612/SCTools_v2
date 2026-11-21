@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFrame, QHB
                                QStackedWidget, QTextEdit, QVBoxLayout, QWidget)
 
 APP_NAME = "SCTools2"
-APP_VER = "3.2"
+APP_VER = "3.3"
 EXE_NAME = "SCTools2.exe"
 UNINSTALL_NAME = "uninstall.exe"
 REG_PARENT = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"

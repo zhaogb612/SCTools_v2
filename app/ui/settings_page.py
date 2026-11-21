@@ -972,6 +972,29 @@ class SettingsPage(QWidget):
         hk_row.addWidget(self.btn_hk_on)
         hk_row.addWidget(self.btn_hk_off)
         v1.addLayout(hk_row)
+        # 自动检查更新：启动后静默检查新版本（不打扰；发现新版本才提示）
+        au_row = QHBoxLayout()
+        au_row.setSpacing(8)
+        l_au = QLabel("自动检查更新")
+        l_au.setObjectName("GroupTitle")
+        au_row.addWidget(l_au)
+        au_row.addStretch()
+        self.btn_au_on = QPushButton("开启")
+        self.btn_au_off = QPushButton("关闭")
+        for b in (self.btn_au_on, self.btn_au_off):
+            b.setObjectName("Ghost")
+            b.setCheckable(True)
+            b.setCursor(Qt.PointingHandCursor)
+        self._au_group = QButtonGroup(self)
+        self._au_group.addButton(self.btn_au_on)
+        self._au_group.addButton(self.btn_au_off)
+        self._au_group.setExclusive(True)
+        self.btn_au_on.clicked.connect(lambda: self.select_auto_update(True))
+        self.btn_au_off.clicked.connect(lambda: self.select_auto_update(False))
+        (self.btn_au_on if skin.get("auto_check_update", False) else self.btn_au_off).setChecked(True)
+        au_row.addWidget(self.btn_au_on)
+        au_row.addWidget(self.btn_au_off)
+        v1.addLayout(au_row)
         # 启动图：随机（默认图+自添加图池）/自定义/关闭，自添加图复制进用户启动图目录
         sp_row = QHBoxLayout()
         sp_row.setSpacing(8)
@@ -1135,60 +1158,6 @@ class SettingsPage(QWidget):
         vw.addLayout(we_row)
         root.addWidget(sec_w)
 
-        # 关于 + 版本/更新 + 配置导入导出
-        sec4 = QFrame()
-        sec4.setObjectName("Section")
-        v4 = QVBoxLayout(sec4)
-        v4.setContentsMargins(16, 14, 16, 14)
-        v4.setSpacing(10)
-        ver_row = QHBoxLayout()
-        ver_row.setSpacing(8)
-        about = QLabel("SCTools2 v{} (PySide6)    作者：沙尘612    开源协议：MIT".format(config.APP_VER))
-        about.setObjectName("Sub")
-        ver_row.addWidget(about)
-        ver_row.addStretch()
-        self.btn_check = QPushButton("检查更新")
-        self.btn_check.setObjectName("Ghost")
-        self.btn_check.setCursor(Qt.PointingHandCursor)
-        self.btn_check.clicked.connect(self._check_update)
-        ver_row.addWidget(self.btn_check)
-        v4.addLayout(ver_row)
-        cfg_row = QHBoxLayout()
-        cfg_row.setSpacing(8)
-        tip = QLabel("配置文件位于 resources/config/；支持打包导出/导入，便于换机迁移。")
-        tip.setObjectName("Sub")
-        tip.setWordWrap(True)
-        cfg_row.addWidget(tip, 1)
-        btn_export = QPushButton("导出配置")
-        btn_import = QPushButton("导入配置")
-        for b in (btn_export, btn_import):
-            b.setObjectName("Ghost")
-            b.setCursor(Qt.PointingHandCursor)
-        btn_export.clicked.connect(self._export_config)
-        btn_import.clicked.connect(self._import_config)
-        cfg_row.addWidget(btn_export)
-        cfg_row.addWidget(btn_import)
-        self.btn_reset = QPushButton("恢复默认")
-        self.btn_reset.setObjectName("Ghost")
-        self.btn_reset.setCursor(Qt.PointingHandCursor)
-        self.btn_reset.clicked.connect(self._reset_config)
-        cfg_row.addWidget(self.btn_reset)
-        v4.addLayout(cfg_row)
-        cache_row = QHBoxLayout()
-        cache_row.setSpacing(8)
-        ctip = QLabel("缓存：程序图标与网页图标的提取结果保存在 %LOCALAPPDATA%\\SCTools\\icon_cache，"
-                      "可随时清理（配置与自添加启动图不受影响）。")
-        ctip.setObjectName("Sub")
-        ctip.setWordWrap(True)
-        cache_row.addWidget(ctip, 1)
-        self.btn_cache = QPushButton("清除缓存")
-        self.btn_cache.setObjectName("Ghost")
-        self.btn_cache.setCursor(Qt.PointingHandCursor)
-        self.btn_cache.clicked.connect(self._clear_cache)
-        cache_row.addWidget(self.btn_cache)
-        v4.addLayout(cache_row)
-        root.addWidget(sec4)
-
         root.addStretch()
         self.select_scheme(skin.get("scheme", "晴空蓝"), apply=False)
         mode = skin.get("mode", "day")
@@ -1309,6 +1278,10 @@ class SettingsPage(QWidget):
         self._win.skin["global_hotkey"] = bool(on)
         self._win.apply_hotkey()
 
+    def select_auto_update(self, on):
+        self._win.skin["auto_check_update"] = bool(on)
+        config.save_json("skin.json", self._win.skin)
+
     # -- 启动图 ---------------------------------------------------------------
     def select_splash(self, mode):
         self._win.skin["splash_mode"] = mode
@@ -1408,81 +1381,7 @@ class SettingsPage(QWidget):
             AppMessageBox.warning(self, "热键注册失败",
                                   "「{}」可能已被其他程序占用，请点击热键文字换一个组合键。".format(combo))
 
-    # -- 配置导入导出 ---------------------------------------------------------
-    def _export_config(self):
-        import zipfile
-        path, _ = QFileDialog.getSaveFileName(
-            self, "导出配置", os.path.join(os.path.expanduser("~"), "Desktop", "sctools_config.zip"),
-            "配置包 (*.zip)")
-        if not path:
-            return
-        try:
-            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
-                for name in ("tools.json", "skin.json", "nav.json"):
-                    p = config.config_path(name)
-                    if os.path.exists(p):
-                        z.write(p, name)
-            AppMessageBox.info(self, "导出成功", "配置已导出到：\n" + path)
-        except OSError as e:
-            AppMessageBox.warning(self, "导出失败", str(e))
-
-    def _import_config(self):
-        import zipfile
-        path, _ = QFileDialog.getOpenFileName(self, "导入配置", "", "配置包 (*.zip)")
-        if not path:
-            return
-        if not AppMessageBox.question(self, "导入配置",
-                                      "导入将覆盖当前应用清单、皮肤与导航配置，确定继续？"):
-            return
-        try:
-            with zipfile.ZipFile(path) as z:
-                for name in ("tools.json", "skin.json", "nav.json"):
-                    if name in z.namelist():
-                        z.extract(name, config.config_dir())
-        except (OSError, zipfile.BadZipFile) as e:
-            AppMessageBox.warning(self, "导入失败", str(e))
-            return
-        self._win.reload_config()
-        AppMessageBox.info(self, "导入成功", "配置已应用。")
-
-    def _reset_config(self):
-        """配置恢复出厂默认（重写默认配置文件并整体重载界面）"""
-        if not AppMessageBox.question(self, "恢复默认配置",
-                                      "将重置应用清单、皮肤与导航为出厂默认，\n自定义主题与收藏也会清空，确定继续？"):
-            return
-        from app.core.app_manager import DEFAULT_CATEGORIES, DEFAULT_TOOLS
-        from app.core.nav_manager import DEFAULT_NAV
-        from app.core.theme import DEFAULT_SKIN
-        try:
-            config.save_json("tools.json", {"categories": list(DEFAULT_CATEGORIES),
-                                            "tools": [dict(t) for t in DEFAULT_TOOLS]})
-            config.save_json("nav.json", {"items": [dict(it) for it in DEFAULT_NAV]})
-            config.save_json("skin.json", dict(DEFAULT_SKIN))
-        except OSError as e:
-            AppMessageBox.warning(self, "重置失败", str(e))
-            return
-        # reload_config 会重建本页，延后一拍避免在当前槽内销毁自身
-        QTimer.singleShot(0, self._win.reload_config)
-
-    # -- 缓存与启动图管理 -----------------------------------------------------
-    def _clear_cache(self):
-        """清空本机图标缓存目录（程序图标 + 网站 favicon 提取结果，均为可再生缓存）"""
-        from app.core import favicon, file_icon
-        removed = 0
-        for d in {file_icon.CACHE_DIR, favicon.CACHE_DIR}:
-            if not os.path.isdir(d):
-                continue
-            for f in os.listdir(d):
-                p = os.path.join(d, f)
-                try:
-                    if os.path.isfile(p):
-                        os.remove(p)
-                        removed += 1
-                except OSError:
-                    pass
-        AppMessageBox.info(self, "清除缓存",
-                           "已清理 {} 个缓存文件，图标会在下次启动时重新生成。".format(removed))
-
+    # -- 启动图管理 ---------------------------------------------------------
     def _manage_splash(self):
         SplashPoolDialog(self, on_change=self._after_splash_delete).exec()
 
@@ -1494,32 +1393,6 @@ class SettingsPage(QWidget):
             self._win.skin["splash_custom"] = ""
             self._win.apply_theme()
         self._refresh_splash_row()
-
-    # -- 检查更新 -------------------------------------------------------------
-    def _check_update(self):
-        from app.core import updater
-        self.btn_check.setEnabled(False)
-        self.btn_check.setText("检查中...")
-        self._upd_thread = updater.FnThread(updater.fetch_latest, self)
-        self._upd_thread.done.connect(self._on_update_info)
-        self._upd_thread.fail.connect(self._on_update_fail)
-        self._upd_thread.start()
-
-    def _on_update_fail(self, msg):
-        self.btn_check.setEnabled(True)
-        self.btn_check.setText("检查更新")
-        AppMessageBox.warning(self, "检查更新失败",
-                              msg + "\n\nGitHub 在部分网络环境下可能无法直连，"
-                                    "可稍后重试或到项目发布页手动下载。")
-
-    def _on_update_info(self, info):
-        self.btn_check.setEnabled(True)
-        self.btn_check.setText("检查更新")
-        if info is None:
-            AppMessageBox.info(self, "检查更新", "当前已是最新版本。")
-            return
-        dlg = UpdateDialog(self, info)
-        dlg.exec()
 
     def sync_titlebar_style(self, style):
         """外部切换后同步按钮选中态"""
